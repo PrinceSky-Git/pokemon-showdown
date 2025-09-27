@@ -60,7 +60,11 @@ async function updateIcons(): Promise<void> {
 export const commands: Chat.ChatCommands = {
   usericon: 'icon',
   icon: {
-    async set(target: string, room: Room, user: User) {
+	  ''(target, room, user) {
+		  this.parse(`/iconhelp`);
+	  },
+	  
+    async set(target, room, user) {
       this.checkCan('globalban');
       const parts = target.split(',').map(s => s.trim());
       const [name, imageUrl, sizeStr] = parts;
@@ -99,7 +103,7 @@ export const commands: Chat.ChatCommands = {
       }
     },
     
-    async delete(target: string, room: Room, user: User) {
+    async delete(target, room, user) {
       this.checkCan('globalban');
       const userId = toID(target);
       if (!await DB.usericons.has(userId)) return this.errorReply(`${target} does not have an icon.`);
@@ -124,7 +128,7 @@ export const commands: Chat.ChatCommands = {
     },
   },
   
-  iconhelp(target: string, room: ChatRoom | null, user: User) {
+  iconhelp(target, room, user) {
     if (!this.runBroadcast()) return;
     this.sendReplyBox(
       `<div><b><center>Custom Icon Commands</center></b><br>` +
