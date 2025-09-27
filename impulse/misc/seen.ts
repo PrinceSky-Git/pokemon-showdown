@@ -4,11 +4,12 @@
 * Instructions:
 * Add this code in server/users.ts
 * In onDisconnect Function
-* if (this.named) {
-*   db.seen.insert(this.id, Date.now()).catch(err => {
-*     console.error('Error saving seen data:', err);
-*   });
-* }
+if (this.named) {
+   db.seen.insert(this.id, Date.now()).catch(err => {
+     console.error('Error saving seen data:', err);
+   });
+ }
+* @license MIT
 */
 
 export const commands: Chat.ChatCommands = {
