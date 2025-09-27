@@ -1,7 +1,7 @@
 /*
 * Pokemon Showdown
 * Experiance
-* Instructionsv
+* Instructions:
 * Add this code in server/chat.ts
 * In parse function//Output the message
 * if (this.user.registered)
