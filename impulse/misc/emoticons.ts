@@ -2,8 +2,8 @@
 * Pokemon Showdown
 * Emoticons
 * Instructions:
-* Replce sendChatMessage in server/chat.ts
-*sendChatMessage(message: string) {
+* Replce sendChatMessage in server/chat.ts with this
+sendChatMessage(message: string) {
 		const emoticons = Impulse.parseEmoticons(message, this.room);
 		if (this.pmTarget) {
 			const blockInvites = this.pmTarget.settings.blockInvites;
