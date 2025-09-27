@@ -4,7 +4,7 @@
 * Instructions:
 * Add this code inside server/users.ts
 * handleRename function
-* Impulse.NewsManager.onUserConnect(user);
+Impulse.NewsManager.onUserConnect(user);
 */
 
 interface NewsEntry {
