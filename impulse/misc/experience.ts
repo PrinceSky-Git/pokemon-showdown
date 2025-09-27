@@ -4,8 +4,7 @@
 * Instructions:
 * Add this code in server/chat.ts
 * In parse function//Output the message
-* if (this.user.registered)
-* Impulse.ExpSystem.addExp(this.user.id, 1);
+if (this.user.registered) Impulse.ExpSystem.addExp(this.user.id, 1);
 */
 
 const DEFAULT_EXP = 0;
