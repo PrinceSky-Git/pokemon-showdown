@@ -194,6 +194,10 @@ MusicPlaylist.loadPlaylists();
 
 export const commands: Chat.ChatCommands = {
   playlist: {
+	  ''(target, room, user) {
+		  this.parse(`/playlisthelp`);
+	  },
+	  
     async add(target, room, user) {
       if (!target) {
         return this.errorReply("Usage: /playlist add <URL> or /playlist add <URL>, <title> for non-YouTube platforms");
