@@ -207,27 +207,25 @@ export const commands: ChatCommands = {
 
     view: "list",
     list(target, room, user) {
-      if (!this.runBroadcast()) return;
-
-      const emoteKeys = Object.keys(emoticons);
-      let reply = '<center><details><summary>Click to view emoticons</summary>';
-      reply += '<table style="border-collapse: collapse;">';
+       this.checkBroadcast();
+       const emoteKeys = Object.keys(emoticons);
+       let reply = '<center><details><summary>Click to view emoticons</summary>';
+       reply += '<table style="border-collapse: collapse;">';
       
-      for (let i = 0; i < emoteKeys.length; i += 5) {
-        reply += '<tr>';
-        for (let j = i; j < i + 5 && j < emoteKeys.length; j++) {
-          const emote = emoteKeys[j];
-          reply += `<td style="text-align: center; padding: 10px; vertical-align: top; border: 1px solid #ccc; border-radius: 8px;">`;
-          reply += `<img src="${emoticons[emote]}" height="40" width="40" style="display: block; margin: 0 auto;"><br>`;
-          reply += `<small>${Chat.escapeHTML(emote)}</small>`;
-          reply += `</td>`;
-        }
-        reply += '</tr>';
-      }
-      
-      reply += '</table>';
-      reply += '</details></center>';
-      this.sendReplyBox(`<div class="infobox infobox-limited">${reply}</div>`);
+       for (let i = 0; i < emoteKeys.length; i += 5) {
+          reply += '<tr>';
+          for (let j = i; j < i + 5 && j < emoteKeys.length; j++) {
+             const emote = emoteKeys[j];
+             reply += `<td style="text-align: center; padding: 10px; vertical-align: top; border: 1px solid #ccc; border-radius: 8px;">`;
+             reply += `<img src="${emoticons[emote]}" height="40" width="40" style="display: block; margin: 0 auto;"><br>`;
+             reply += `<small>${Chat.escapeHTML(emote)}</small>`;
+             reply += `</td>`;
+          }
+          reply += '</tr>';
+       }
+       reply += '</table>';
+       reply += '</details></center>';
+       this.sendReplyBox(`<div class="infobox infobox-limited">${reply}</div>`);
     },
 
     ignore(target, room, user) {
