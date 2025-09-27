@@ -132,7 +132,7 @@ export const commands: Chat.ChatCommands = {
     },
     
     set(target: string, room: ChatRoom, user: User): void {
-      this.checkCan('ban');
+      this.checkCan('globalban');
       const targets: string[] = target.split(',').map(t => t.trim());
       if (!targets[1]) return this.parse('/customcolorhelp');
       const targetId = toID(targets[0]);
@@ -149,7 +149,7 @@ export const commands: Chat.ChatCommands = {
     },
 
     delete(target: string, room: ChatRoom, user: User): void {
-      this.checkCan('ban');
+      this.checkCan('globalban');
       if (!target) return this.parse('/customcolorhelp');
       const targetId: string = toID(target);
       if (!customColors[targetId]) return this.errorReply(`/customcolor - ${target} does not have a custom color.`);
@@ -188,7 +188,7 @@ export const commands: Chat.ChatCommands = {
       `<div><b><center>Custom Color Commands</center></b><br>` +
       `<ul><li><code>/customcolor set [user], [hex]</code> - Gives [user] a custom color of [hex] (Requires: @ and higher)</li><br>` +
       `<li><code>/customcolor delete [user]</code> - Deletes a user's custom color (Requires: @ and higher)</li><br>` +
-      `<li><code>/customcolor reload</code> - Reloads colors. (Requires: ~)</li><br>` +
+      `<li><code>/customcolor reload</code> - Reloads colors. (Requires: @ and higher)</li><br>` +
       `<li><code>/customcolor preview [user], [hex]</code> - Previews what that username looks like with [hex] as the color.</li>` +
       `</ul></div>`);
   },
