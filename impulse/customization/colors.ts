@@ -148,7 +148,7 @@ export const commands: Chat.ChatCommands = {
       }
     },
 
-    delete(target: string, room: ChatRoom, user: User): void {
+    delete(target, room, user) {
       this.checkCan('globalban');
       if (!target) return this.parse('/customcolorhelp');
       const targetId: string = toID(target);
@@ -168,7 +168,7 @@ export const commands: Chat.ChatCommands = {
       }
     },
 
-    preview(target: string, room: ChatRoom, user: User): void {
+    preview(target, room, user) {
       if (!this.runBroadcast()) return;
       const targets: string[] = target.split(',').map(t => t.trim());
       if (!targets[1]) return this.parse('/customcolorhelp');
@@ -176,7 +176,7 @@ export const commands: Chat.ChatCommands = {
     },
 
     reload(target: string, room: ChatRoom, user: User): void {
-      this.checkCan('ban');
+      this.checkCan('globalban');
       updateColor();
       this.privateModAction(`(${user.name} has reloaded custom colours.)`);
     },
@@ -193,11 +193,11 @@ export const commands: Chat.ChatCommands = {
       `</ul></div>`);
   },
   
-  '!hex': true,
-  hex(target: string, room: ChatRoom, user: User): void {
-    if (!this.runBroadcast()) return;
-    const targetUser: string = target ? target : user.name;
-    const color: string = nameColor(targetUser);
-    this.sendReplyBox(`The hex code of ${Impulse.nameColor(targetUser, true, true)} is: <font color="${color}"><b>${color}</b></font>`);
-  },
+   '!hex': true,
+   hex(target, room, user) {
+      if (!this.runBroadcast()) return;
+		const targetUser: string = target ? target : user.name;
+		const color: string = nameColor(targetUser);
+		this.sendReplyBox(`The hex code of ${Impulse.nameColor(targetUser, true, true)} is: <font color="${color}"><b>${color}</b></font>`);
+	},
 };
