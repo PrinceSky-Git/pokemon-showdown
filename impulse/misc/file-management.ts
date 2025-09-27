@@ -313,3 +313,4 @@ export const commands: Chat.ChatCommands = {
       `</ul></div>`);
   },
   filemanager: 'fmhelp',
+};
