@@ -1,5 +1,7 @@
 /*
-* Pokemon Showdown Emoticons
+* Pokemon Showdown
+* Emoticons
+* @license MIT
 */
 
 import Autolinker from 'autolinker';
@@ -137,7 +139,7 @@ export const commands: ChatCommands = {
     delete: "del",
     remove: "del",
     rem: "del",
-    del(target room, user) {
+    del(target, room, user) {
       room = this.requireRoom();
       this.checkCan('globalban');
       if (!target) return this.parse("/emoticonshelp");
