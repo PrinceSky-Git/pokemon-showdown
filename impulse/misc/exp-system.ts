@@ -1,6 +1,6 @@
 /*
 * Pokemon Showdown
-* Experiance
+* Experience
 * Instructions:
 * Add this code in server/chat.ts
 * In parse function//Output the message
