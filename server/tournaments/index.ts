@@ -1176,7 +1176,7 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 		const results = this.generator.getResults();
 		if (typeof results === 'string') return; // Error case
 		
-		const rewardConfig = rewardSettings.rewards || {
+		const rewardConfig = {
 			1: 10,
 			2: 6,
 			3: 2,
