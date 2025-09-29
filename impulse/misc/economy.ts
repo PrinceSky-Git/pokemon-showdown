@@ -316,8 +316,6 @@ export const commands: Chat.Commands = {
       Impulse.nameColor(userid, true, true),
       `${balance} ${CURRENCY}`,
     ]);
-    const styleBy = Impulse.nameColor('TurboRx', true, true);
-
     const output = Impulse.generateThemedTable(title, header, data, styleBy);
     this.ImpulseReplyBox(output);
   },
