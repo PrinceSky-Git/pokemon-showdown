@@ -2,8 +2,7 @@
  * PSGO Collectable Pokemon Cards System
  * Enhanced version with per-set unique composite keys - FULLY FIXED
  * Original by HoeenHero and Volco
- * Refactored by CarkJ338 with Pokemon-authentic subtypes
- * Fixed: TypeError in getSubtypeBonus and pack generation issues
+ * Refactored by CarkJ338
  */
 
 import { FS } from '../../lib/fs';
@@ -478,9 +477,10 @@ function displayCard(card: Card): string {
         `<div style="flex: 0 0 254px;"><img src="${card.image}" alt="${card.name}" width="254" height="342" style="border-radius: 6px;"></div>` +
         `<div style="flex: 1; min-width: 250px;">` +
         `<div style="font-size: 2em; font-weight: bold; margin-bottom: 10px;">${card.name}</div>` +
-        `<div style="color: #666; margin-bottom: 10px;">(ID: ${card.id}) (Set: ${card.set})</div>` +
+        `<div style="color: #666; margin-bottom: 10px;">(ID: ${card.id})</div>` +
         `<div style="font-size: 1.5em; font-weight: bold; color: ${RARITY_COLORS[card.rarity as CardRarity] || '#cc0000'}; margin-bottom: 15px;">${card.rarity}</div>` +
         `<div style="margin-bottom: 8px;"><strong>Types:</strong> ${formattedTypes}</div>` +
+		  `<div style="margin-bottom: 8px;"><strong>Set:</strong> ${card.set}</div>` +
         `<div style="margin-bottom: 8px;"><strong>Card Number:</strong> ${card.cardNumber}</div>` +
         `<div><strong>Points:</strong> ${points}${getSubtypeBonus(card.types) > 0 ? ` (+${getSubtypeBonus(card.types)} bonus)` : ''}</div>` +
         `</div></div>`;
