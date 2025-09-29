@@ -1,3 +1,10 @@
+body {
+  background-image: url('https://i.ibb.co/FkY1sHtt/pokemon-gyarados-raging-waters-desktop-wallpaper.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 /* Pokemon Showdown Themed Table Styles */
 
 .themed-table-container {
@@ -5,20 +12,20 @@
   overflow-x: auto;
   margin: 1rem 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: rgba(173, 216, 230, 0.8); /* light blue transparent */
+  border: 1px solid rgba(0, 0, 128, 0.4); /* navy blue border */
+  box-shadow: 0 2px 4px rgba(0, 0, 139, 0.3); /* dark blue shadow */
 }
 
 /* Dark theme support for Pokemon Showdown */
 body.dark .themed-table-container,
 .dark .themed-table-container,
 [data-theme="dark"] .themed-table-container {
-  background: rgba(40, 40, 50, 0.8);
-  border-color: rgba(255, 255, 255, 0.15);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(10, 40, 100, 0.8);
+  border-color: rgba(173, 216, 230, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 70, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .themed-table-title {
@@ -26,18 +33,18 @@ body.dark .themed-table-container,
   padding: 0.75rem 1rem;
   font-size: 1.1rem !important;
   font-weight: 600 !important;
-  color: #333 !important;
-  border-bottom: 2px solid rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 0.5);
+  color: #001f3f !important; /* dark navy text */
+  border-bottom: 2px solid rgba(0, 0, 128, 0.4);
+  background: rgba(173, 216, 230, 0.5);
   text-align: center !important;
 }
 
 body.dark .themed-table-title,
 .dark .themed-table-title,
 [data-theme="dark"] .themed-table-title {
-  color: #f0f0f0 !important;
-  background: rgba(50, 50, 60, 0.6);
-  border-bottom-color: rgba(255, 255, 255, 0.15);
+  color: #c0d6ff !important;
+  background: rgba(30, 60, 120, 0.8);
+  border-bottom-color: rgba(173, 216, 230, 0.3);
 }
 
 .themed-table {
@@ -49,13 +56,13 @@ body.dark .themed-table-title,
 }
 
 .themed-table-header {
-  background: linear-gradient(to bottom, rgba(240, 240, 240, 0.9), rgba(220, 220, 220, 0.9)) !important;
+  background: linear-gradient(to bottom, rgba(210, 230, 255, 0.9), rgba(180, 210, 255, 0.9)) !important;
 }
 
 body.dark .themed-table-header,
 .dark .themed-table-header,
 [data-theme="dark"] .themed-table-header {
-  background: linear-gradient(to bottom, rgba(70, 70, 80, 0.95), rgba(50, 50, 60, 0.95)) !important;
+  background: linear-gradient(to bottom, rgba(30, 60, 120, 0.95), rgba(20, 40, 90, 0.95)) !important;
 }
 
 .themed-table-header th {
@@ -63,9 +70,9 @@ body.dark .themed-table-header,
   text-align: center !important;
   font-weight: 600 !important;
   font-size: 9pt !important;
-  color: #222 !important;
+  color: #001144 !important; /* dark blue */
   background: transparent !important;
-  border-bottom: 2px solid rgba(0, 0, 0, 0.2);
+  border-bottom: 2px solid rgba(0, 0, 128, 0.6);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -74,9 +81,9 @@ body.dark .themed-table-header,
 body.dark .themed-table-header th,
 .dark .themed-table-header th,
 [data-theme="dark"] .themed-table-header th {
-  color: #f0f0f0 !important;
+  color: #c0d6ff !important;
   background: transparent !important;
-  border-bottom-color: rgba(255, 255, 255, 0.25);
+  border-bottom-color: rgba(173, 216, 230, 0.3);
 }
 
 .themed-table-row {
@@ -85,33 +92,33 @@ body.dark .themed-table-header th,
 }
 
 .themed-table-row:nth-child(even) {
-  background-color: rgba(0, 0, 0, 0.03);
+  background-color: rgba(173, 216, 230, 0.1); /* very light blue stripes */
 }
 
 body.dark .themed-table-row:nth-child(even),
 .dark .themed-table-row:nth-child(even),
 [data-theme="dark"] .themed-table-row:nth-child(even) {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(200, 220, 255, 0.1);
 }
 
 .themed-table-row:hover {
-  background-color: rgba(100, 150, 200, 0.15);
+  background-color: rgba(70, 130, 180, 0.2);
   transform: scale(1.01);
-  box-shadow: 0 2px 8px rgba(100, 150, 200, 0.15);
+  box-shadow: 0 2px 8px rgba(30, 90, 160, 0.25);
 }
 
 body.dark .themed-table-row:hover,
 .dark .themed-table-row:hover,
 [data-theme="dark"] .themed-table-row:hover {
-  background-color: rgba(100, 150, 200, 0.25);
+  background-color: rgba(30, 90, 160, 0.3);
   transform: scale(1.01);
-  box-shadow: 0 2px 8px rgba(100, 150, 200, 0.2);
+  box-shadow: 0 2px 8px rgba(30, 90, 160, 0.3);
 }
 
 .themed-table-row td {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  color: #333 !important;
+  color: #001f3f !important;
   text-align: center !important;
   white-space: nowrap;
 }
@@ -119,8 +126,8 @@ body.dark .themed-table-row:hover,
 body.dark .themed-table-row td,
 .dark .themed-table-row td,
 [data-theme="dark"] .themed-table-row td {
-  color: #e0e0e0 !important;
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+  color: #c0d6ff !important;
+  border-bottom-color: rgba(173, 216, 230, 0.2);
 }
 
 .themed-table-row:last-child td {
