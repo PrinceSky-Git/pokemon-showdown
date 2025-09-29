@@ -11,8 +11,8 @@ const DEFAULT_EXP = 0;
 const EXP_UNIT = `EXP`;
 Impulse.expUnit = EXP_UNIT;
 
-const MIN_LEVEL_EXP = 8;
-const MULTIPLIER = 1.3;
+const MIN_LEVEL_EXP = 10;
+const MULTIPLIER = 1.4;
 let DOUBLE_EXP = false;
 let DOUBLE_EXP_END_TIME: number | null = null;
 const EXP_COOLDOWN = 30000;
