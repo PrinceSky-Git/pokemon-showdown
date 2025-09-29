@@ -207,7 +207,7 @@ export const commands: ChatCommands = {
 
     view: "list",
     list(target, room, user) {
-       this.checkBroadcast();
+       if (!this.runBroadcast()) return;
        const emoteKeys = Object.keys(emoticons);
        let reply = '<center><details><summary>Click to view emoticons</summary>';
        reply += '<table style="border-collapse: collapse;">';
