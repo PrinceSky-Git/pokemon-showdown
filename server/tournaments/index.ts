@@ -17,6 +17,11 @@ export interface TournamentRoomSettings {
 	recentToursLength?: number;
 	recentTours?: { name: string, baseFormat: string, time: number }[];
 	blockRecents?: boolean;
+	tournamentRewards?: {
+		enabled: boolean;
+		rewards: { [place: number]: number };
+		participationReward?: number;
+	};
 }
 
 type Generator = RoundRobin | Elimination;
@@ -1167,7 +1172,72 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 		}
 		this.room.update();
 	}
+	
+	private async distributeTournamentRewards() {
+		if (!this.isTournamentStarted || !this.generator.isTournamentEnded()) return;
+		const results = this.generator.getResults();
+		if (typeof results === 'string') return; // Error case
+		// Define reward amounts (you can customize these)
+		const rewardConfig = {
+			1: 10,
+			2: 6,
+			3: 2,
+			// Add more places as needed
+			};
+		
+		for (let place = 0; place < results.length && place < 3; place++) {
+			const playersAtPlace = results[place];
+			const rewardAmount = rewardConfig[place + 1 as keyof typeof rewardConfig];
+		
+			if (!rewardAmount || !playersAtPlace) continue;
+		
+			for (const player of playersAtPlace) {
+				if (!player?.id) continue;
+			
+				try {
+					Economy.addMoney(player.id, rewardAmount, 
+										  `Tournament ${this.getPlacementText(place + 1)} reward`, 'tournament-system');
+				
+					// Notify the player
+					const user = Users.get(player.id);
+					if (user?.connected) {
+						user.popup(`|html|<div class="broadcast-green">` +	
+									  `<b>Tournament Reward!</b><br/>` +
+									  `You earned <b>${rewardAmount} ${Impulse.currency}</b> for placing` +
+									  `<b>${this.getPlacementText(place + 1)}</b> in the tournament!<br/>` +
+									  `Your new balance: ${Economy.readMoney(player.id)} ${Impulse.currency}` +
+									  `</div>`);
+					}
+					
+					// Announce to room
+					this.room.add(`|html|<div class="broadcast-green">` +
+					`${Impulse.nameColor(player.name, true, true)} earned ` +
+					`<b>${rewardAmount} ${Impulse.currency}</b> for placing ` +
+					`<b>${this.getPlacementText(place + 1)}</b>!` +
+					`</div>`);
+				
+				} catch (error) {
+					console.error(`Error distributing tournament reward to ${player.id}:`, error);
+				}
+			}
+		}
+	
+		this.room.update();
+	}
+
+	private getPlacementText(place: number): string {
+		switch (place) {
+			case 1: return '1st place';
+			case 2: return '2nd place';
+			case 3: return '3rd place';
+			default: return `${place}th place`;
+		}
+	}
+	
 	onTournamentEnd() {
+		// Distribute rewards before ending
+		this.distributeTournamentRewards();
+		
 		const update = {
 			results: (this.generator.getResults() as TournamentPlayer[][]).map(usersToNames),
 			format: this.name,
@@ -1991,6 +2061,37 @@ const commands: Chat.ChatCommands = {
 				return this.sendReply(`Usage: /tour ${cmd} <on|off>`);
 			}
 		},
+		
+		'rewards': {
+			set(target, room, user) {
+				room = this.requireRoom();
+				this.checkCan('globalban', null, room);
+				const [first, second, third] = target.split(',').map(x => parseInt(x.trim()));
+		
+				if (!first || first < 0) return this.sendReply('Usage: /tour rewards set [1st], [2nd], [3rd]');
+		
+				if (!room.settings.tournaments) room.settings.tournaments = {};
+				room.settings.tournaments.tournamentRewards = {
+					enabled: true,
+					rewards: { 1: first, 2: second || 0, 3: third || 0 }
+				};
+				room.saveSettings();
+		
+				this.privateModAction(`Tournament rewards set by ${user.name}: 1st=${first}, 2nd=${second || 0}, 3rd=${third || 0} ${Impulse.currency}`);
+			},
+			
+			disable(target, room, user) {
+				room = this.requireRoom();
+				this.checkCan('globalban', null, room);
+		
+				if (!room.settings.tournaments) room.settings.tournaments = {};
+				room.settings.tournaments.tournamentRewards = { enabled: false, rewards: {} };
+				room.saveSettings();
+		
+				this.privateModAction(`Tournament rewards disabled by ${user.name}`);
+			}
+		},
+		
 		settings: {
 			modjoin(target, room, user) {
 				room = this.requireRoom();
