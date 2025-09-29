@@ -1235,8 +1235,6 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 	}
 	
 	onTournamentEnd() {
-		// Distribute rewards before ending
-		this.distributeTournamentRewards();
 		
 		const update = {
 			results: (this.generator.getResults() as TournamentPlayer[][]).map(usersToNames),
@@ -1245,6 +1243,7 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 			bracketData: this.getBracketData(),
 		};
 		this.room.add(`|tournament|end|${JSON.stringify(update)}`);
+		this.distributeTournamentRewards();
 		const settings = this.room.settings.tournaments;
 		if (settings?.recentToursLength) {
 			if (!settings.recentTours) settings.recentTours = [];
@@ -2061,37 +2060,6 @@ const commands: Chat.ChatCommands = {
 				return this.sendReply(`Usage: /tour ${cmd} <on|off>`);
 			}
 		},
-		
-		'rewards': {
-			set(target, room, user) {
-				room = this.requireRoom();
-				this.checkCan('globalban', null, room);
-				const [first, second, third] = target.split(',').map(x => parseInt(x.trim()));
-		
-				if (!first || first < 0) return this.sendReply('Usage: /tour rewards set [1st], [2nd], [3rd]');
-		
-				if (!room.settings.tournaments) room.settings.tournaments = {};
-				room.settings.tournaments.tournamentRewards = {
-					enabled: true,
-					rewards: { 1: first, 2: second || 0, 3: third || 0 }
-				};
-				room.saveSettings();
-		
-				this.privateModAction(`Tournament rewards set by ${user.name}: 1st=${first}, 2nd=${second || 0}, 3rd=${third || 0} ${Impulse.currency}`);
-			},
-			
-			disable(target, room, user) {
-				room = this.requireRoom();
-				this.checkCan('globalban', null, room);
-		
-				if (!room.settings.tournaments) room.settings.tournaments = {};
-				room.settings.tournaments.tournamentRewards = { enabled: false, rewards: {} };
-				room.saveSettings();
-		
-				this.privateModAction(`Tournament rewards disabled by ${user.name}`);
-			}
-		},
-		
 		settings: {
 			modjoin(target, room, user) {
 				room = this.requireRoom();
