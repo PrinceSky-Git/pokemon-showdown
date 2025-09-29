@@ -25,6 +25,13 @@ exports.githubToken = '';
 
 exports.emoteSize = '36';
 
+exports.tournamentRewardRooms = ['lobby', 'tournaments'];
+
+exports.tournamentRewards = {
+	1: 10,
+	2: 5
+};
+
 /**
  * wsdeflate - compresses WebSocket messages
  *  Toggles use of the Sec-WebSocket-Extension permessage-deflate extension.
