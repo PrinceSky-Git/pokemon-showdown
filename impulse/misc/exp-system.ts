@@ -321,7 +321,7 @@ export const pages: Chat.PageTable = {
     });
 
     const output = Impulse.generateThemedTable(
-      `Top ${richest.length} Users by ${EXP_UNIT}`,
+      `Impulse Experiance Ranking`,
       ['Rank', 'User', 'EXP', 'Level', 'Next Level At'],
       data
     );
