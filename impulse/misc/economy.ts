@@ -316,7 +316,7 @@ export const commands: Chat.Commands = {
       Impulse.nameColor(userid, true, true),
       `${balance} ${CURRENCY}`,
     ]);
-    const output = Impulse.generateThemedTable(title, header, data, styleBy);
+    const output = Impulse.generateThemedTable(title, header, data);
     this.ImpulseReplyBox(output);
   },
 
