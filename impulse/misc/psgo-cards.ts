@@ -6,7 +6,7 @@
  */
 
 import {  FS  } from '../../lib/fs';
-import {  JsonDB  } from '../../db';
+import {  JsonDB  } from '../../impulse/db';
 
 // ================ Configuration ================
 const CARDS_PER_PACK = 10;
