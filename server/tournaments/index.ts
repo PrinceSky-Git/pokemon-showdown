@@ -1170,16 +1170,19 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 	
 	private async distributeTournamentRewards() {
 		if (!this.isTournamentStarted || !this.generator.isTournamentEnded()) return;
+		// Only give rewards in lobby or tournaments room
+		if (this.room.roomid !== 'lobby' && this.room.roomid !== 'tournaments') return;
+	
 		const results = this.generator.getResults();
 		if (typeof results === 'string') return; // Error case
-		// Define reward amounts (you can customize these)
-		const rewardConfig = {
+		
+		const rewardConfig = rewardSettings.rewards || {
 			1: 10,
 			2: 6,
 			3: 2,
-			// Add more places as needed
-			};
-		
+		};
+	
+		// Distribute rewards based on placement
 		for (let place = 0; place < results.length && place < 3; place++) {
 			const playersAtPlace = results[place];
 			const rewardAmount = rewardConfig[place + 1 as keyof typeof rewardConfig];
@@ -1191,35 +1194,20 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 			
 				try {
 					Economy.addMoney(player.id, rewardAmount, 
-										  `Tournament ${this.getPlacementText(place + 1)} reward`, 'tournament-system');
-				
-					// Notify the player
-					const user = Users.get(player.id);
-					if (user?.connected) {
-						user.popup(`|html|<div class="broadcast-green">` +	
-									  `<b>Tournament Reward!</b><br/>` +
-									  `You earned <b>${rewardAmount} ${Impulse.currency}</b> for placing` +
-									  `<b>${this.getPlacementText(place + 1)}</b> in the tournament!<br/>` +
-									  `Your new balance: ${Economy.readMoney(player.id)} ${Impulse.currency}` +
-									  `</div>`);
-					}
+					`Tournament ${this.getPlacementText(place + 1)} reward in ${this.room.roomid}`, 'tournament-system');
 					
 					// Announce to room
-					this.room.add(`|html|<div class="broadcast-green">` +
-					`${Impulse.nameColor(player.name, true, true)} earned ` +
-					`<b>${rewardAmount} ${Impulse.currency}</b> for placing ` +
-					`<b>${this.getPlacementText(place + 1)}</b>!` +
-					`</div>`);
+					this.room.add(`|html|<div class="broadcast-green">${player.name} has won <b>${rewardAmount} ${Economy.currency || 'coins'}</b> for placing <b>${this.getPlacementText(place + 1)}</b>!</div>`);
 				
 				} catch (error) {
 					console.error(`Error distributing tournament reward to ${player.id}:`, error);
 				}
 			}
 		}
-	
+		
 		this.room.update();
 	}
-
+	
 	private getPlacementText(place: number): string {
 		switch (place) {
 			case 1: return '1st place';
