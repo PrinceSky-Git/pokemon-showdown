@@ -1171,9 +1171,10 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 	/*
 	* TOURNAMENTS REWARDS
 	*/
-	
+
 	private async distributeTournamentRewards() {
 		if (!this.isTournamentStarted || !this.generator.isTournamentEnded()) return;
+	
 		// Define which rooms give tournament rewards (configurable)
 		const rewardEligibleRooms = Config.tournamentRewardRooms || ['lobby', 'tournaments'];
 	
@@ -1185,94 +1186,42 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 	
 		// Configurable reward amounts for top 2 only
 		const rewardConfig = Config.tournamentRewards || {
-			1: 10, // Winner gets 10 coins
-			2: 5,  // Runner-up gets 5 coins
-			};
+			1: 10,
+			2: 5,
+		};
 	
-		// Special handling for elimination tournaments to ensure runner-up gets reward
-		if (this.generator.name.includes('Elimination')) {
-			// For elimination tournaments, manually find the runner-up
-			const winner = results[0]?.[0]; // First place winner
-			if (winner) {
-				// Give winner reward
+		// Distribute rewards based on placement (top 2 only)
+		for (let place = 0; place < results.length && place < 2; place++) {
+			const playersAtPlace = results[place];
+			const rewardAmount = rewardConfig[place + 1 as keyof typeof rewardConfig];
+			if (!rewardAmount || !playersAtPlace) continue;
+		
+			const isWinner = (place === 0);
+			const placementText = this.getPlacementText(place + 1);
+		
+			for (const player of playersAtPlace) {
+				if (!player?.id) continue;
+			
 				try {
-					Economy.addMoney(winner.id, rewardConfig[1], `Tournament 1st place reward in ${this.room.roomid}`, 'tournament-system');
-					this.room.add(`|html|<div class="broadcast-green">${winner.name} won the tournament and earned <b>${rewardConfig[1]} ${Impulse.currency}</b>!</div>`);
-				} catch (error) {
-					console.error(`Error distributing winner reward to ${winner.id}:`, error);
-				}
-			}
-			
-			// Find runner-up (person who lost the final match)
-			const runnerUp = results[1]?.[0] || this.findEliminationRunnerUp();
-			if (runnerUp && runnerUp !== winner) {
-				try {
-					Economy.addMoney(runnerUp.id, rewardConfig[2], `Tournament 2nd place reward in ${this.room.roomid}`, 'tournament-system');
-					this.room.add(`|html|<div class="broadcast-blue">${runnerUp.name} earned <b>${rewardConfig[2]} ${Impulse.currency}</b> for 2nd place!</div>`);
-				} catch (error) {
-					console.error(`Error distributing runner-up reward to ${runnerUp.id}:`, error);
-				}
-			}
-		} else {
-			// For Round Robin and other tournament types, use the original method
-			for (let place = 0; place < results.length && place < 2; place++) {
-				const playersAtPlace = results[place];
-				const rewardAmount = rewardConfig[place + 1 as keyof typeof rewardConfig];
-			
-				if (!rewardAmount || !playersAtPlace) continue;
-			
-				const isWinner = (place === 0);
-			
-				for (const player of playersAtPlace) {
-					if (!player?.id) continue;
+					Economy.addMoney(player.id, rewardAmount, 
+										  `Tournament ${placementText} reward in ${this.room.roomid}`, 'tournament-system');
 				
-					try {
-						Economy.addMoney(player.id, rewardAmount, `Tournament ${this.getPlacementText(place + 1)} reward in ${this.room.roomid}`, 'tournament-system');
-						if (isWinner) {
-							this.room.add(`|html|<div class="broadcast-green">${player.name} won the tournament and earned <b>${rewardAmount} ${Impulse.currency}</b>!</div>`);
-						} else {
-							this.room.add(`|html|<div class="broadcast-blue">${player.name} earned <b>${rewardAmount} ${Impulse.currency}</b> for 2nd place!</div>`);
-						}
-					} catch (error) {
-						console.error(`Error distributing tournament reward to ${player.id}:`, error);
-					}
+					// Announce to room with different messages
+					if (isWinner) {
+						this.room.add(`|html|<div class="broadcast-green">${player.name} won the tournament and earned <b>${rewardAmount} ${Impulse.currency}</b>!</div>`);
+					} else {
+						this.room.add(`|html|<div class="broadcast-blue">${player.name} earned <b>${rewardAmount} ${Impulse.currency}</b> for 2nd place!</div>`);
+				}
+					
+				} catch (error) {
+					console.error(`Error distributing tournament reward to ${player.id}:`, error);
 				}
 			}
 		}
 	
 		this.room.update();
 	}
-	
-	private findEliminationRunnerUp(): TournamentPlayer | null {
-		// Look through recent battle results to find who lost the final
-		if (!this.generator.name.includes('Elimination')) return null;
-	
-		// Check if we can find the runner-up by looking at losses
-		// The runner-up should have exactly (maxSubtrees) losses in elimination
-		const maxLosses = (this.generator as any).maxSubtrees || 1;
-		
-		for (const player of this.players) {
-			if (player.losses === maxLosses && !player.isEliminated) {
-				return player;
-			}
-		}
-		
-		// Fallback: find the player with the highest number of wins who isn't the winner
-		const winner = this.generator.getResults()?.[0]?.[0];
-		if (!winner) return null;
-	
-		let bestRunnerUp = null;
-		let highestWins = -1;
-	
-		for (const player of this.players) {
-			if (player !== winner && player.wins > highestWins) {
-				highestWins = player.wins;
-				bestRunnerUp = player;
-			}
-		}
-		return bestRunnerUp;
-	}
-	
+
 	private getPlacementText(place: number): string {
 		switch (place) {
 			case 1: return '1st place';
@@ -1281,7 +1230,7 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 			default: return `${place}th place`;
 		}
 	}
-
+	
 	/*
 	* TOURNAMENTS REWARDS END
 	*/
