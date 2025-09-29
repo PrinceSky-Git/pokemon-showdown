@@ -302,24 +302,6 @@ export const commands: Chat.Commands = {
     }
   },
 
-  richestusers(target, room, user) {
-    if (!this.runBroadcast()) return;
-    const richest = Economy.getRichestUsers(100);
-    if (!richest.length) {
-      return this.sendReplyBox(`No users have any ${CURRENCY} yet.`);
-    }
-
-    const title = `Top ${richest.length} Richest Users`;
-    const header = ['Rank', 'User', 'Balance'];
-    const data = richest.map(([userid, balance], index) => [
-      (index + 1).toString(),
-      Impulse.nameColor(userid, true, true),
-      `${balance} ${CURRENCY}`,
-    ]);
-    const output = Impulse.generateThemedTable(title, header, data);
-    this.ImpulseReplyBox(output);
-  },
-
   // Admin Commands
   givemoney(target, room, user) {
     this.checkCan('globalban');
