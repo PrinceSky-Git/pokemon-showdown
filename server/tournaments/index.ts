@@ -1167,55 +1167,79 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 		}
 		this.room.update();
 	}
-	
+
 	private async distributeTournamentRewards() {
-		if (!this.isTournamentStarted || !this.generator.isTournamentEnded()) return;
-		// Only give rewards in lobby or tournaments room
-		if (this.room.roomid !== 'lobby' && this.room.roomid !== 'tournaments') return;
+	if (!this.isTournamentStarted || !this.generator.isTournamentEnded()) return;
 	
-		const results = this.generator.getResults();
-		if (typeof results === 'string') return; // Error case
-		
-		const rewardConfig = {
-			1: 10,
-			2: 6,
-			3: 2,
-		};
+	// Only give rewards in lobby or tournaments room
+	if (this.room.roomid !== 'lobby' && this.room.roomid !== 'tournaments') return;
 	
-		// Distribute rewards based on placement
-		for (let place = 0; place < results.length && place < 3; place++) {
-			const playersAtPlace = results[place];
-			const rewardAmount = rewardConfig[place + 1 as keyof typeof rewardConfig];
+	const results = this.generator.getResults();
+	if (typeof results === 'string') return; // Error case
+	
+	// Hardcoded reward amounts
+	const rewardConfig = {
+		1: 10, // Winner gets 100 coins
+		2: 6,  // Runner-up gets 50 coins
+		3: 3,  // Third place gets 25 coins
+	};
+	const participationReward = 1; // Everyone gets 5 coins for participating
+	
+	// Distribute rewards based on placement
+	for (let place = 0; place < results.length && place < 3; place++) {
+		const playersAtPlace = results[place];
+		const rewardAmount = rewardConfig[place + 1 as keyof typeof rewardConfig];
 		
-			if (!rewardAmount || !playersAtPlace) continue;
+		if (!rewardAmount || !playersAtPlace) continue;
 		
-			for (const player of playersAtPlace) {
-				if (!player?.id) continue;
+		for (const player of playersAtPlace) {
+			if (!player?.id) continue;
 			
-				try {
-					Economy.addMoney(player.id, rewardAmount, 
+			try {
+				Economy.addMoney(player.id, rewardAmount, 
 					`Tournament ${this.getPlacementText(place + 1)} reward in ${this.room.roomid}`, 'tournament-system');
-					
-					// Announce to room
-					this.room.add(`|html|<div class="broadcast-green">${player.name} has won <b>${rewardAmount} ${Economy.currency || 'coins'}</b> for placing <b>${this.getPlacementText(place + 1)}</b>!</div>`);
 				
-				} catch (error) {
-					console.error(`Error distributing tournament reward to ${player.id}:`, error);
-				}
+				// Announce to room
+				this.room.add(`|html|<div class="broadcast-green"> ${player.name} earned <b>${rewardAmount} ${Impulse.currency}</b> for placing <b>${this.getPlacementText(place + 1)}</b>!</div>`);
+				
+			} catch (error) {
+				console.error(`Error distributing tournament reward to ${player.id}:`, error);
 			}
 		}
-		
-		this.room.update();
 	}
 	
-	private getPlacementText(place: number): string {
-		switch (place) {
-			case 1: return '1st place';
-			case 2: return '2nd place';
-			case 3: return '3rd place';
-			default: return `${place}th place`;
+	// Give participation rewards to everyone who didn't place in top 3
+	for (const participant of this.players) {
+		// Check if this participant didn't win any of the top 3 places
+		const didNotPlace = !results.slice(0, 3).flat().some(winner => winner?.id === participant.id);
+		
+		if (didNotPlace && !participant.isDisqualified) {
+			try {
+				Economy.addMoney(participant.id, participationReward, 
+					`Tournament participation reward in ${this.room.roomid}`, 'tournament-system');
+				
+				const user = Users.get(participant.id);
+				if (user?.connected) {
+					user.sendTo(this.room, `|html|<small style="color: green;">${participationReward} ${Impulse.currency} for participating in the ${this.room.roomid} tournament!</small>`);
+				}
+			} catch (error) {
+				console.error(`Error distributing participation reward to ${participant.id}:`, error);
+			}
 		}
 	}
+	
+	this.room.update();
+}
+
+private getPlacementText(place: number): string {
+	switch (place) {
+		case 1: return '1st place';
+		case 2: return '2nd place';
+		case 3: return '3rd place';
+		default: return `${place}th place`;
+	}
+}
+	
 	
 	onTournamentEnd() {
 		
