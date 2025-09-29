@@ -232,70 +232,72 @@ export const pages: Chat.PageTable = {
   output += `</div></div>`;
 
   return output;
+	},
+
+	receiptlogs(args, user) {
+  if (!user.can('globalban')) {
+    return `<div class="pad"><h2>Access denied.</h2></div>`;
+  }
+
+  const [targetUser, pageStr] = args;
+  const page = parseInt(pageStr) || 1;
+  const entriesPerPage = 50;
+  const filterUserid = targetUser ? toID(targetUser) : null;
+
+  const allReceipts = Shop.getAllReceipts(filterUserid);
+  const totalPages = Math.ceil(allReceipts.length / entriesPerPage);
+  const startIndex = (page - 1) * entriesPerPage;
+  const endIndex = startIndex + entriesPerPage;
+  const receiptsToShow = allReceipts.slice(startIndex, endIndex);
+
+  let output = `<div class="pad">`;
+
+  // Header with timestamp and user info
+  output += `<div class="infobox">` +
+    `<strong>Current Date and Time (UTC):</strong> ${formatUTCTimestamp(new Date())}<br>` +
+    `<strong>Current User:</strong> ${Impulse.nameColor(user.id, true, true)}` +
+    `</div><br>`;
+
+  if (!allReceipts.length) {
+    return output + `<h2>No purchase logs found${filterUserid ? ` for ${Impulse.nameColor(filterUserid, true, true)}` : ''}.</h2></div>`;
+  }
+
+  const header = ['Receipt ID', 'User ID', 'Time of Purchase', 'Item Name', `Amount (${Impulse.currency})`];
+  const data = receiptsToShow.map(receipt => [
+    receipt.receiptId,
+    Impulse.nameColor(receipt.userId, true, true),
+    formatUTCTimestamp(new Date(receipt.timestamp)),
+    receipt.itemName,
+    receipt.amount.toString(),
+  ]);
+
+  const title = `Purchase Logs${filterUserid ? ` for ${Impulse.nameColor(filterUserid, true, true)}` : ''} ` +
+    `(Page ${page} of ${totalPages})`;
+
+  // Generate themed table without additional wrapper
+  output += Impulse.generateThemedTable(title, header, data);
+
+  // Pagination
+  output += `<div class="spacer"><div class="buttonbar" style="text-align: center">`;
+  if (page > 1) {
+    output += `<button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-${page - 1}">` +
+      `<i class="fa fa-chevron-left"></i> Previous</button> `;
+  }
+  output += `<button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-1">` +
+    `<i class="fa fa-angle-double-left"></i> First</button> ` +
+    `<span style="border: 1px solid #6688AA; padding: 2px 8px; border-radius: 4px;">` +
+    `Page ${page} of ${totalPages}</span> ` +
+    `<button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-${totalPages}">` +
+    `Last <i class="fa fa-angle-double-right"></i></button>`;
+  if (page < totalPages) {
+    output += ` <button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-${page + 1}">` +
+      `Next <i class="fa fa-chevron-right"></i></button>`;
+  }
+  output += `</div></div></div>`;
+
+  return output;
 },
-
-  receiptlogs(args, user) {
-    if (!user.can('globalban')) {
-      return `<div class="pad"><h2>Access denied.</h2></div>`;
-    }
-
-    const [targetUser, pageStr] = args;
-    const page = parseInt(pageStr) || 1;
-    const entriesPerPage = 50;
-    const filterUserid = targetUser ? toID(targetUser) : null;
-
-    const allReceipts = Shop.getAllReceipts(filterUserid);
-    const totalPages = Math.ceil(allReceipts.length / entriesPerPage);
-    const startIndex = (page - 1) * entriesPerPage;
-    const endIndex = startIndex + entriesPerPage;
-    const receiptsToShow = allReceipts.slice(startIndex, endIndex);
-
-    let output = `<div class="pad">`;
-
-    // Header with timestamp and user info
-    output += `<div class="infobox">` +
-      `<strong>Current Date and Time (UTC):</strong> ${formatUTCTimestamp(new Date())}<br>` +
-      `<strong>Current User:</strong> ${Impulse.nameColor(user.id, true, true)}` +
-      `</div><br>`;
-
-    if (!allReceipts.length) {
-      return output + `<h2>No purchase logs found${filterUserid ? ` for ${Impulse.nameColor(filterUserid, true, true)}` : ''}.</h2></div>`;
-    }
-
-    const header = ['Receipt ID', 'User ID', 'Time of Purchase', 'Item Name', `Amount (${Impulse.currency})`];
-    const data = receiptsToShow.map(receipt => [
-      receipt.receiptId,
-      Impulse.nameColor(receipt.userId, true, true),
-      formatUTCTimestamp(new Date(receipt.timestamp)),
-      receipt.itemName,
-      receipt.amount.toString(),
-    ]);
-
-    const title = `Purchase Logs${filterUserid ? ` for ${Impulse.nameColor(filterUserid, true, true)}` : ''} ` +
-      `(Page ${page} of ${totalPages})`;
-
-    output += `<div class="ladder">${Impulse.generateThemedTable(title, header, data)}</div>`;
-
-    // Pagination
-    output += `<div class="spacer"><div class="buttonbar" style="text-align: center">`;
-    if (page > 1) {
-      output += `<button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-${page - 1}">` +
-        `<i class="fa fa-chevron-left"></i> Previous</button> `;
-    }
-    output += `<button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-1">` +
-      `<i class="fa fa-angle-double-left"></i> First</button> ` +
-      `<span style="border: 1px solid #6688AA; padding: 2px 8px; border-radius: 4px;">` +
-      `Page ${page} of ${totalPages}</span> ` +
-      `<button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-${totalPages}">` +
-      `Last <i class="fa fa-angle-double-right"></i></button>`;
-    if (page < totalPages) {
-      output += ` <button class="button" name="send" value="/join view-receiptlogs-${filterUserid || ''}-${page + 1}">` +
-        `Next <i class="fa fa-chevron-right"></i></button>`;
-    }
-    output += `</div></div></div>`;
-
-    return output;
-  },
+	
 };
 
 // ================ Chat Commands ================
