@@ -17,11 +17,6 @@ export interface TournamentRoomSettings {
 	recentToursLength?: number;
 	recentTours?: { name: string, baseFormat: string, time: number }[];
 	blockRecents?: boolean;
-	tournamentRewards?: {
-		enabled: boolean;
-		rewards: { [place: number]: number };
-		participationReward?: number;
-	};
 }
 
 type Generator = RoundRobin | Elimination;
