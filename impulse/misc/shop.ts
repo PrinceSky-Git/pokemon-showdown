@@ -175,7 +175,6 @@ class Shop {
 
 // ================ Pages ================
 export const pages: Chat.PageTable = {
-
 	shop(args, user) {
   const items = Shop.getShopItems();
   const messages = Shop.getShopMessages();
@@ -297,6 +296,7 @@ export const pages: Chat.PageTable = {
 
   return output;
 },
+	
 	
 };
 
