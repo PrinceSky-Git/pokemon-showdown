@@ -161,6 +161,36 @@ export class Economy {
 global.Economy = Economy;
 
 export const pages: Chat.PageTable = {
+  async economyladder(args, user) {
+    const richest = Economy.getRichestUsers(100);
+    if (!richest.length) {
+      return `<div class="pad"><h2>No users have any ${CURRENCY} yet.</h2></div>`;
+    }
+
+    const data = richest.map(([userid, money], index) => {
+      let rankDisplay = (index + 1).toString();
+      if (index === 0) rankDisplay = '🥇 1';
+      else if (index === 1) rankDisplay = '🥈 2';
+      else if (index === 2) rankDisplay = '🥉 3';
+      
+      return [
+        rankDisplay,
+        Impulse.nameColor(userid, true, true),
+        `${money.toLocaleString()} ${CURRENCY}`,
+      ];
+    });
+
+    const output = Impulse.generateThemedTable(
+      `Economy Ladder`,
+      ['Rank', 'User', 'Balance'],
+      data
+    );
+    return `${output}`;
+  },
+};
+
+
+export const pages: Chat.PageTable = {
   economylogs(args, user) {
     // Check permissions
     if (!user.can('globalban')) {
@@ -426,6 +456,11 @@ export const commands: Chat.Commands = {
       room.update();
     }
   },
+
+	richestusers(target, room, user) {
+		this.parse(`/join view-economyladder`);
+	},
+	
 
   economylogs(target, room, user) {
     this.checkCan('globalban');
