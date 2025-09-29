@@ -175,63 +175,64 @@ class Shop {
 
 // ================ Pages ================
 export const pages: Chat.PageTable = {
-  shop(args, user) {
-    const items = Shop.getShopItems();
-    const messages = Shop.getShopMessages();
+
+	shop(args, user) {
+  const items = Shop.getShopItems();
+  const messages = Shop.getShopMessages();
+  
+  // Shop Items Section
+  let output = `<div class="pad">`;
+
+  // Header with timestamp and user info
+  output += `<div class="infobox">` +
+    `<strong>Current Date and Time (UTC):</strong> ${formatUTCTimestamp(new Date())}<br>` +
+    `<strong>Current User:</strong> ${Impulse.nameColor(user.id, true, true)}` +
+    `</div><br>`;
+
+  // Refresh button
+  output += `<div style="float: right">` +
+    `<button class="button" name="send" value="/join view-shop">` +
+    `<i class="fa fa-refresh"></i> Refresh Shop</button>` +
+    `</div>` +
+    `<div style="clear: both"></div>`;
+
+  // Items table
+  if (!items.length) {
+    output += `<h2>The shop is currently empty.</h2>`;
+  } else {
+    const header = ['Item', 'Description', 'Price', 'Buy'];
+    const data = items.map(item => [
+      item.name,
+      item.description,
+      `${item.price} ${Impulse.currency}`,
+      `<button class="button" name="send" value="/buyitem ${item.name}">` +
+        `<i class="fa fa-shopping-cart"></i> Buy</button>`,
+    ]);
     
-    // Shop Items Section
-    let output = `<div class="pad">`;
+    output += Impulse.generateThemedTable('Impulse Shop', header, data);
+  }
 
-    // Header with timestamp and user info
-    output += `<div class="infobox">` +
-      `<strong>Current Date and Time (UTC):</strong> ${formatUTCTimestamp(new Date())}<br>` +
-      `<strong>Current User:</strong> ${Impulse.nameColor(user.id, true, true)}` +
-      `</div><br>`;
-
-    // Refresh button
-    output += `<div style="float: right">` +
-      `<button class="button" name="send" value="/join view-shop">` +
-      `<i class="fa fa-refresh"></i> Refresh Shop</button>` +
-      `</div>` +
-      `<div style="clear: both"></div>`;
-
-    // Items table
-    if (!items.length) {
-      output += `<h2>The shop is currently empty.</h2>`;
-    } else {
-      const header = ['Item', 'Description', 'Price', 'Buy'];
-      const data = items.map(item => [
-        item.name,
-        item.description,
-        `${item.price} ${Impulse.currency}`,
-        `<button class="button" name="send" value="/buyitem ${item.name}">` +
-          `<i class="fa fa-shopping-cart"></i> Buy</button>`,
-      ]);
-      output += `<div class="ladder">` +
-        `${Impulse.generateThemedTable('Impulse Shop', header, data)}` +
-        `</div>`;
-    }
-
-    // Recent Activity Section
-    output += `<div style="margin-top: 20px;">` +
-      `<h3><i class="fa fa-history"></i> Recent Activity</h3>` +
-      `<div class="infobox" style="max-height: 300px; overflow-y: auto;">`;
+  // Recent Activity Section using themed table
+  output += `<div style="margin-top: 20px;">`;
+  
+  if (messages.length) {
+    const activityHeader = ['Time (UTC)', 'Activity'];
+    const activityData = messages.map(msg => [
+      formatUTCTimestamp(new Date(msg.timestamp)),
+      msg.message
+    ]);
     
-    if (messages.length) {
-      messages.forEach(msg => {
-        const time = formatUTCTimestamp(new Date(msg.timestamp));
-        output += `<div style="margin: 2px 0;">` +
-          `<small style="color: #666;">[${time}]</small> ${msg.message}` +
-          `</div>`;
-      });
-    } else {
-      output += `<div style="text-align: center; color: #666;">No recent activity</div>`;
-    }
-    
-    output += `</div></div></div>`;
+    output += Impulse.generateThemedTable('Recent Activity', activityHeader, activityData);
+  } else {
+    // Use themed table even for empty state
+    const emptyData = [['No recent activity', '']];
+    output += Impulse.generateThemedTable('Recent Activity', ['Status', ''], emptyData);
+  }
+  
+  output += `</div></div>`;
 
-    return output;
-  },
+  return output;
+},
 
   receiptlogs(args, user) {
     if (!user.can('globalban')) {
