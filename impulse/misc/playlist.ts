@@ -1,7 +1,7 @@
 /*
 * Pokemon Showdown
 * Music Playlist
-* @autbor ClarkJ338
+* @author ClarkJ338
 * @license MIT
 */
 
