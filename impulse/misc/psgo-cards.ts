@@ -1,6 +1,5 @@
 /**
  * PSGO Collectable Pokemon Cards System
- * Enhanced version with complete command set
  * Original by HoeenHero and Volco
  * Refactored by CarkJ338
  */
@@ -14,13 +13,13 @@ const PACK_PRICE = 5;
 const CARDSEARCH_MAX_VALUE = 500;
 
 // ================ Data Paths ================
-const CARDS_DATA_PATH = 'config/psgo/user-cards.json';
-const PACKS_DATA_PATH = 'config/psgo/user-packs.json';
-const PACK_CREDITS_PATH = 'config/psgo/pack-credits.json';
-const MANAGERS_PATH = 'config/psgo/managers.json';
-const SETTINGS_PATH = 'config/psgo/user-settings.json';
-const CARD_DEFINITIONS_PATH = 'config/psgo/card-definitions.json';
-const PACK_DEFINITIONS_PATH = 'config/psgo/pack-definitions.json';
+const CARDS_DATA_PATH = 'impulse-db/psgo/user-cards.json';
+const PACKS_DATA_PATH = 'impulse-db/psgo/user-packs.json';
+const PACK_CREDITS_PATH = 'impulse-db/psgo/pack-credits.json';
+const MANAGERS_PATH = 'impulse-db/psgo/managers.json';
+const SETTINGS_PATH = 'impulse-db/psgo/user-settings.json';
+const CARD_DEFINITIONS_PATH = 'impulse-db/psgo/card-definitions.json';
+const PACK_DEFINITIONS_PATH = 'impulse-db/psgo/pack-definitions.json';
 
 // ================ Interfaces ================
 interface Card {
