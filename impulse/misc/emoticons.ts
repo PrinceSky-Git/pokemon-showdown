@@ -205,8 +205,7 @@ export const commands: ChatCommands = {
       }
     },
 
-    view: "list",
-    list(target, room, user) {
+    ''(target, room, user) {
        if (!this.runBroadcast()) return;
        const emoteKeys = Object.keys(emoticons);
        let reply = '<center><details><summary>Click to view emoticons</summary>';
@@ -253,10 +252,6 @@ export const commands: ChatCommands = {
 
       Config.emoteSize = size.toString();
       this.sendReply(`Emoticon size has been set to ${size}px.`);
-    },
-    
-    ''(target, room, user) {
-      this.parse('/emote view');
     },
 
   randemote() {
