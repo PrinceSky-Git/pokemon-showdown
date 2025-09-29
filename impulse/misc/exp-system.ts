@@ -325,7 +325,7 @@ export const pages: Chat.PageTable = {
       ['Rank', 'User', 'EXP', 'Level', 'Next Level At'],
       data
     );
-    return `<div class="pad ladder">${output}</div>`;
+    return `${output}`;
   },
 };
 
