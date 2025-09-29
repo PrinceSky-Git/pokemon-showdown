@@ -7,6 +7,7 @@
 import { FS } from '../../lib';
 
 const STAFF_ROOM_ID = 'staff';
+const SYMBOL_COLOR_PATH = 'impulse-db/symbolcolors.json';
 
 interface SymbolColors {
 	[userid: string]: string;
@@ -15,7 +16,7 @@ interface SymbolColors {
 let symbolcolors: SymbolColors = {};
 
 try {
-	const data = FS('impulse-db/symbolcolors.json').readIfExistsSync();
+	const data = FS(`${SYMBOL_COLOR_PATH}`).readIfExistsSync();
 	if (data) {
 		symbolcolors = JSON.parse(data);
 	}
@@ -25,7 +26,7 @@ try {
 
 async function updateSymbolColors(): Promise<void> {
 	try {
-		await FS('impulse-db/symbolcolors.json').writeUpdate(() => JSON.stringify(symbolcolors));
+		await FS(`${SYMBOL_COLOR_PATH}`).writeUpdate(() => JSON.stringify(symbolcolors));
 		let newCss = '/* SYMBOLCOLORS START */\n';
 		for (const name in symbolcolors) {
 			newCss += `[id$="-userlist-user-${toID(name)}"] button > em.group {\n color: ${symbolcolors[name]}; \n}\n` +
