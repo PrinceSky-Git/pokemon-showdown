@@ -160,7 +160,7 @@ export class Economy {
 
 global.Economy = Economy;
 
-export const pages: Chat.PageTable = {
+export const pages2: Chat.PageTable = {
   async economyladder(args, user) {
     const richest = Economy.getRichestUsers(100);
     if (!richest.length) {
