@@ -1121,26 +1121,26 @@ export const commands: Chat.Commands = {
                    `<tr><td style="padding: 8px;"><code>/psgo add</code></td>` +
                    `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo add base1, 25, Charizard, [url], Rare, Base Set, Fire<br><br>` +
                    `<strong>Pack:</strong><br>/psgo add base1, Base Set, Generation 1, 1999-01-09, 100, shop</td>` +
-                   `<td style="padding: 8px;">Manager or #</td></tr>` +
+                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                    `<tr><td style="padding: 8px;"><code>/psgo edit</code></td>` +
                    `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo edit base1-25, Charizard, [url], Rare, Base Set, Fire - EX<br><br>` +
                    `<strong>Pack:</strong><br>/psgo edit base1, Base Set, Gen 1, 1999-01-09, 150, shop<br><br>` +
                    `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
-                   `<td style="padding: 8px;">Manager or #</td></tr>` +
+                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                    `<tr><td style="padding: 8px;"><code>/psgo delete</code></td>` +
                    `<td style="padding: 8px;">/psgo delete base1-25<br>/psgo delete base1<br><br>` +
                    `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
-                   `<td style="padding: 8px;">Manager or #</td></tr>` +
+                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                    `<tr><td style="padding: 8px;"><code>/psgo cleanup</code></td>` +
                    `<td style="padding: 8px;">/psgo cleanup<br>(Removes invalid/corrupted entries)</td>` +
-                   `<td style="padding: 8px;">Manager or #</td></tr>` +
+                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                    `<tr><td style="padding: 8px;"><code>/psgo manage</code></td>` +
                    `<td style="padding: 8px;"><strong>Add manager:</strong> /psgo manage add, username<br>` +
                    `<strong>Remove:</strong> /psgo manage remove, username<br>` +
                    `<strong>List:</strong> /psgo manage list<br>` +
                    `<strong>Credits:</strong> /psgo manage credits, username, 5<br>` +
                    `<strong>Take card:</strong> /psgo manage take, username, base1-25</td>` +
-                   `<td style="padding: 8px;">Manager or #</td></tr>` +
+                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                    `</table>` +
                    `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
                    `</div>`;
