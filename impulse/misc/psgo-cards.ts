@@ -724,61 +724,62 @@ export const commands: Chat.Commands = {
         },
         packshelp: ['/psgo packs - View your unopened packs'],
 
-        async add(target, room, user) {
-            const isManagerUser = await isManager(user.id);
-            if (!isManagerUser) this.checkCan('roomowner');
-            if (!target) return this.parse('/help psgo add');
+		 async add(target, room, user) {
+			 const isManagerUser = await isManager(user.id);
+			 if (!isManagerUser) this.checkCan('roomowner');
+			 if (!target) return this.parse('/help psgo add');
 
-            const parts = target.split(',').map(x => x.trim());
-    
-            if (parts.length === 7) {
-                const [setId, cardNumber, name, image, rarity, set, types] = parts;
-                const cardId = makeCardId(setId, cardNumber);
-                const nameId = makeCardNameId(setId, name);
-        
-                const allCards = await getAllCards();
-                
-                if (allCards[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
-                
-                // Check if nameId exists
-                for (const existingCardId in allCards) {
-                    if (allCards[existingCardId].nameId === nameId) {
-                        return this.errorReply(`Card name ${name} exists in set ${setId}.`);
-                    }
-                }
-        
-                allCards[cardId] = { id: cardId, name, nameId, image, rarity, set, setId, cardNumber, types };
-                await saveAllCards(allCards);
-                this.modlog('PSGO ADD CARD', null, cardId);
-                return this.sendReply(`Added card: ${name} (${cardId})`);
-        
-            } else if (parts.length === 6) {
-                const [code, name, series, releaseDate, priceStr, flags] = parts;
-                const packCode = toID(code);
-                const allPacks = await getAllPacks();
-                
-                if (allPacks[packCode]) return this.errorReply(`Pack ${packCode} already exists!`);
-        
-                const inShop = flags.includes('shop');
-                const creditPack = flags.includes('credit');
-        
-                allPacks[packCode] = {
-                    code: packCode, name, series, releaseDate,
-                    price: parseInt(priceStr) || 0, inShop, creditPack
-                };
-                await saveAllPacks(allPacks);
-                this.modlog('PSGO ADD PACK', null, packCode);
-                return this.sendReply(`Added pack: ${name} (${packCode})`);
-            }
-    
-            return this.errorReply('Usage: /psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] OR /psgo add [code], [name], [series], [date], [price], [shop|credit]');
-        },
-        addhelp: [
-            '/psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] - Add card',
-            '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
-            'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
-        ],
+			 const parts = target.split(',').map(x => x.trim());
 
+			 if (parts.length === 7) {
+				 const [setId, cardNumber, name, image, rarity, set, types] = parts;
+				 const cardId = makeCardId(setId, cardNumber);
+				 const nameId = makeCardNameId(setId, name);
+
+				 const allCards = await getAllCards();
+        
+				 if (allCards[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
+				 
+				 // Just warn if similar name exists, don't block
+				 for (const existingCardId in allCards) {
+					 if (allCards[existingCardId].nameId === nameId && existingCardId !== cardId) {
+						 this.sendReply(`⚠️ Warning: Similar card name exists: ${existingCardId}`);
+					 }
+				 }
+				 
+				 allCards[cardId] = { id: cardId, name, nameId, image, rarity, set, setId, cardNumber, types };
+				 await saveAllCards(allCards);
+				 this.modlog('PSGO ADD CARD', null, cardId);
+				 return this.sendReply(`Added card: ${name} (${cardId})`);
+
+			 } else if (parts.length === 6) {
+				 const [code, name, series, releaseDate, priceStr, flags] = parts;
+				 const packCode = toID(code);
+				 const allPacks = await getAllPacks();
+        
+				 if (allPacks[packCode]) return this.errorReply(`Pack ${packCode} already exists!`);
+
+				 const inShop = flags.includes('shop');
+				 const creditPack = flags.includes('credit');
+
+				 allPacks[packCode] = {
+					 code: packCode, name, series, releaseDate,
+					 price: parseInt(priceStr) || 0, inShop, creditPack
+				 };
+				 await saveAllPacks(allPacks);
+				 this.modlog('PSGO ADD PACK', null, packCode);
+				 return this.sendReply(`Added pack: ${name} (${packCode})`);
+			 }
+
+			 return this.errorReply('Usage: /psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] OR /psgo add [code], [name], [series], [date], [price], [shop|credit]');
+		 },
+		 
+		 addhelp: [
+			 '/psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] - Add card',
+			 '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
+			 'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
+		 ],
+		 
 		 async edit(target, room, user) {
 			 const isManagerUser = await isManager(user.id);
 			 if (!isManagerUser) this.checkCan('roomowner');
@@ -792,14 +793,13 @@ export const commands: Chat.Commands = {
 			 if (card && parts.length === 6) {
 				 const [, name, image, rarity, set, types] = parts;
 				 const newNameId = makeCardNameId(card.setId, name);
-
 				 const allCards = await getAllCards();
         
-				 // Check if new nameId conflicts with another card
+				 // Just warn if similar name exists, don't block
 				 if (newNameId !== card.nameId) {
 					 for (const existingCardId in allCards) {
 						 if (allCards[existingCardId].nameId === newNameId && existingCardId !== card.id) {
-							 return this.errorReply(`Card name ${name} exists in set ${card.setId}.`);
+							 this.sendReply(`⚠️ Warning: Similar card name exists: ${existingCardId}`);
 						 }
 					 }
 				 }
@@ -819,7 +819,6 @@ export const commands: Chat.Commands = {
 				 this.modlog('PSGO EDIT CARD', null, card.id);
 				 return this.sendReply(`Edited card: ${name}`);
 			 }
-    
 			 // Try to edit as pack
 			 const packCode = toID(id);
 			 const allPacks = await getAllPacks();
@@ -841,36 +840,38 @@ export const commands: Chat.Commands = {
 			 }
 			 return this.errorReply('ID not found or wrong parameter count.');
 		 },
+
+		 edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
 		 
-        edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
-        
-        async delete(target, room, user) {
-            const isManagerUser = await isManager(user.id);
-            if (!isManagerUser) this.checkCan('roomowner');
-            if (!target) return this.parse('/help psgo delete');
+		 async delete(target, room, user) {
+			 const isManagerUser = await isManager(user.id);
+			 if (!isManagerUser) this.checkCan('roomowner');
+			 if (!target) return this.parse('/help psgo delete');
             
-            const card = await getCardFromInput(target);
-            if (card) {
-                const allCards = await getAllCards();
-                delete allCards[card.id];
-                await saveAllCards(allCards);
-                this.modlog('PSGO DELETE CARD', null, card.id);
-                return this.sendReply(`Deleted card: ${card.name}`);
-            }
+
+			 const card = await getCardFromInput(target);
+			 if (card) {
+				 const allCards = await getAllCards();
+				 delete allCards[card.id];
+				 await saveAllCards(allCards);
+				 this.modlog('PSGO DELETE CARD', null, card.id);
+				 return this.sendReply(`Deleted card: ${card.name}`);
+			 }
             
-            const packCode = toID(target);
-            const allPacks = await getAllPacks();
-            if (allPacks[packCode]) {
-                const packName = allPacks[packCode].name;
-                delete allPacks[packCode];
-                await saveAllPacks(allPacks);
-                this.modlog('PSGO DELETE PACK', null, packCode);
-                return this.sendReply(`Deleted pack: ${packName}`);
-            }
+			 const packCode = toID(target);
+			 const allPacks = await getAllPacks();
+			 if (allPacks[packCode]) {
+				 const packName = allPacks[packCode].name;
+				 delete allPacks[packCode];
+				 await saveAllPacks(allPacks);
+				 this.modlog('PSGO DELETE PACK', null, packCode);
+				 return this.sendReply(`Deleted pack: ${packName}`);
+			 }
             
-            return this.errorReply('Card or pack not found.');
-        },
-        deletehelp: ['/psgo delete [id] - Delete card or pack'],
+			 return this.errorReply('Card or pack not found.');
+		 },
+		 
+		 deletehelp: ['/psgo delete [id] - Delete card or pack'],
 
         async manage(target, room, user) {
             if (!target) return this.parse('/help psgo manage');
