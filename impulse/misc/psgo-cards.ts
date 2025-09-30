@@ -494,6 +494,79 @@ export const commands: Chat.Commands = {
             return this.sendReplyBox(tableHTML);
         },
         ladderhelp: ['/psgo ladder - View points leaderboard'],
+		 
+		 async cards(target, room, user) {
+			 if (!this.runBroadcast()) return;
+			 const allCards = await getAllCards();
+			 const cardList = Object.values(allCards);
+    
+			 if (!cardList.length) {
+				 return this.sendReplyBox('No cards in database.');
+			 }
+    
+			 // Parse filters
+			 const filters = target.split(',').map(x => x.trim().toLowerCase());
+			 let filteredCards = [...cardList];
+    
+			 // Apply filters
+			 for (const filter of filters) {
+				 if (!filter) continue;
+        
+				 if (filter.startsWith('set:')) {
+					 const setId = filter.substring(4);
+					 filteredCards = filteredCards.filter(c => c.setId.toLowerCase().includes(setId));
+				 } else if (filter.startsWith('rarity:')) {
+					 const rarity = filter.substring(7);
+					 filteredCards = filteredCards.filter(c => c.rarity.toLowerCase().includes(rarity));
+				 } else if (filter.startsWith('type:')) {
+					 const type = filter.substring(5);
+					 filteredCards = filteredCards.filter(c => c.types.toLowerCase().includes(type));
+				 } else {
+					 // Search in name
+					 filteredCards = filteredCards.filter(c => c.name.toLowerCase().includes(filter));
+				 }
+			 }
+    
+			 if (!filteredCards.length) {
+				 return this.sendReplyBox('No cards found matching your filters.');
+			 }
+    
+			 // Sort by set and card number
+			 filteredCards.sort((a, b) => {
+				 if (a.setId !== b.setId) return a.setId.localeCompare(b.setId);
+				 return parseInt(a.cardNumber) - parseInt(b.cardNumber);
+			 });
+    
+			 // Build table rows for ALL filtered cards (no pagination)
+			 const rows = filteredCards.map(card => {
+				 const rarityColor = RARITY_COLORS[card.rarity as CardRarity] || '#cc0000';
+				 return [
+					 `<button class="button" name="send" value="/psgo show ${card.id}">${card.id}</button>`,
+					 card.name,
+					 card.set,
+					 `<span style="color: ${rarityColor}; font-weight: bold;">${card.rarity}</span>`,
+					 card.types || 'None'
+				 ];
+			 });
+    
+			 const tableHTML = Impulse.generateThemedTable(
+				 `All Cards (${filteredCards.length} total)`,
+				 ['ID', 'Name', 'Set', 'Rarity', 'Types'],
+				 rows
+			 );
+    
+			 return this.sendReplyBox(
+				 `<div style="max-height: 360px; overflow-y: auto;">` +
+				 tableHTML +
+				 `</div>` +
+				 `<div style="margin-top: 10px; font-size: 0.9em;">` +
+				 `<strong>Filters:</strong> set:base1, rarity:mythic, type:fire, or search by name<br>` +
+				 `<strong>Example:</strong> /psgo cards set:base1, rarity:rare` +
+				 `</div>`
+			 );
+		 },
+		 
+		 cardshelp: ['/psgo cards [filters] - List all cards in database. Filters: set:id, rarity:name, type:fire, or card name'],
 
         async shop(target, room, user) {
             if (!this.runBroadcast()) return;
