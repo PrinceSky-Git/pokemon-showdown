@@ -121,9 +121,15 @@ function fetchFromGistRaw(url: string): Promise<string> {
 }
 
 function validateGistRawURL(url: string): void {
-  const allowedPrefix = "https://gist.githubusercontent.com/";
-  if (!url.startsWith(allowedPrefix)) {
-    throw new Error("Invalid URL. Only raw gist URLs from gist.githubusercontent.com are allowed.");
+  const allowedPrefixes = [
+    "https://gist.githubusercontent.com/",
+    "https://raw.githubusercontent.com/"
+  ];
+  
+  const isAllowed = allowedPrefixes.some(prefix => url.startsWith(prefix));
+  
+  if (!isAllowed) {
+    throw new Error("Invalid URL. Only raw URLs from gist.githubusercontent.com or raw.githubusercontent.com are allowed.");
   }
 }
 
