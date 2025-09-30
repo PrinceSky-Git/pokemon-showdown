@@ -570,55 +570,52 @@ export const commands: Chat.Commands = {
         },
         packshelp: ['/psgo packs - View your unopened packs'],
 
-        async add(target, room, user) {
-            const isManagerUser = await isManager(user.id);
-            if (!isManagerUser) this.checkCan('roomowner');
-            if (!target) return this.parse('/help psgo add');
+		 async add(target, room, user) {
+    const isManagerUser = await isManager(user.id);
+    if (!isManagerUser) this.checkCan('roomowner');
+    if (!target) return this.parse('/help psgo add');
 
-            const parts = target.split(',').map(x => x.trim());
-            
-            if (parts.length === 7) {
-                const [setId, cardNumber, name, image, rarity, set, types] = parts;
-                const cardId = makeCardId(setId, cardNumber);
-                const nameId = makeCardNameId(setId, name);
-                
-                if (cardDefsCache[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
-                if (newNameId !== card.nameId && cardNameToId[newNameId]) {
-                    return this.errorReply(`Card name ${name} exists in set ${card.setId}.`);
-                }
-                
-                if (newNameId !== card.nameId) {
-                    delete cardNameToId[card.nameId];
-                    cardNameToId[newNameId] = card.id;
-                }
-                
-                cardDefsCache[card.id] = {
-                    ...card, name, nameId: newNameId, image, rarity, set, types
-                };
-                await saveCardDefinitions();
-                this.modlog('PSGO EDIT CARD', null, card.id);
-                return this.sendReply(`Edited card: ${name}`);
-            }
-            
-            const packCode = toID(id);
-            const pack = packDefsCache[packCode];
-            if (pack && parts.length === 6) {
-                const [, name, series, releaseDate, priceStr, flags] = parts;
-                packDefsCache[packCode] = {
-                    ...pack, name, series, releaseDate,
-                    price: parseInt(priceStr) || 0,
-                    inShop: flags.includes('shop'),
-                    creditPack: flags.includes('credit')
-                };
-                await savePackDefinitions();
-                this.modlog('PSGO EDIT PACK', null, packCode);
-                return this.sendReply(`Edited pack: ${name}`);
-            }
-            
-            return this.errorReply('ID not found or wrong parameter count.');
-        },
-        edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
-
+    const parts = target.split(',').map(x => x.trim());
+    
+    if (parts.length === 7) {
+        const [setId, cardNumber, name, image, rarity, set, types] = parts;
+        const cardId = makeCardId(setId, cardNumber);
+        const nameId = makeCardNameId(setId, name);
+        
+        if (cardDefsCache[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
+        if (cardNameToId[nameId]) return this.errorReply(`Card name ${name} exists in set ${setId}.`);
+        
+        cardDefsCache[cardId] = { id: cardId, name, nameId, image, rarity, set, setId, cardNumber, types };
+        cardNameToId[nameId] = cardId;
+        await saveCardDefinitions();
+        this.modlog('PSGO ADD CARD', null, cardId);
+        return this.sendReply(`Added card: ${name} (${cardId})`);
+        
+    } else if (parts.length === 6) {
+        const [code, name, series, releaseDate, priceStr, flags] = parts;
+        const packCode = toID(code);
+        if (packDefsCache[packCode]) return this.errorReply(`Pack ${packCode} already exists!`);
+        
+        const inShop = flags.includes('shop');
+        const creditPack = flags.includes('credit');
+        
+        packDefsCache[packCode] = {
+            code: packCode, name, series, releaseDate,
+            price: parseInt(priceStr) || 0, inShop, creditPack
+        };
+        await savePackDefinitions();
+        this.modlog('PSGO ADD PACK', null, packCode);
+        return this.sendReply(`Added pack: ${name} (${packCode})`);
+    }
+    
+    return this.errorReply('Usage: /psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] OR /psgo add [code], [name], [series], [date], [price], [shop|credit]');
+},
+addhelp: [
+    '/psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] - Add card',
+    '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
+    'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
+],
+		 
         async delete(target, room, user) {
             const isManagerUser = await isManager(user.id);
             if (!isManagerUser) this.checkCan('roomowner');
