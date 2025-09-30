@@ -231,10 +231,61 @@ async function makePack(setId: string): Promise<CardInstance[]> {
     const allCards = await getAllCards();
     const packCards = Object.values(allCards).filter(c => c.setId === setId);
     if (!packCards.length) return out;
-    for (let i = 0; i < CARDS_PER_PACK; i++) {
-        const randomCard = packCards[Math.floor(Math.random() * packCards.length)];
-        out.push({ ...randomCard, obtainedAt: Date.now() });
+
+    // Separate cards by rarity
+    const cardsByRarity: Record<string, Card[]> = {
+        'Common': packCards.filter(c => c.rarity === 'Common'),
+        'Uncommon': packCards.filter(c => c.rarity === 'Uncommon'),
+        'Rare': packCards.filter(c => c.rarity === 'Rare'),
+        'Ultra Rare': packCards.filter(c => c.rarity === 'Ultra Rare'),
+        'Legendary': packCards.filter(c => c.rarity === 'Legendary'),
+        'Mythic': packCards.filter(c => c.rarity === 'Mythic'),
+    };
+
+    // Official TCG rates: 6 Commons, 3 Uncommons, 1 Rare or better
+    // Commons: 6 cards
+    for (let i = 0; i < 6; i++) {
+        if (cardsByRarity['Common'].length > 0) {
+            const randomCard = cardsByRarity['Common'][Math.floor(Math.random() * cardsByRarity['Common'].length)];
+            out.push({ ...randomCard, obtainedAt: Date.now() });
+        }
     }
+
+    // Uncommons: 3 cards
+    for (let i = 0; i < 3; i++) {
+        if (cardsByRarity['Uncommon'].length > 0) {
+            const randomCard = cardsByRarity['Uncommon'][Math.floor(Math.random() * cardsByRarity['Uncommon'].length)];
+            out.push({ ...randomCard, obtainedAt: Date.now() });
+        }
+    }
+
+    // Rare slot: 1 card with weighted chances
+    // Rates: Rare 85%, Ultra Rare 10%, Legendary 4%, Mythic 1%
+    const rareRoll = Math.random() * 100;
+    let selectedRarity: string;
+    
+    if (rareRoll < 1) { // 1%
+        selectedRarity = 'Mythic';
+    } else if (rareRoll < 5) { // 4%
+        selectedRarity = 'Legendary';
+    } else if (rareRoll < 15) { // 10%
+        selectedRarity = 'Ultra Rare';
+    } else { // 85%
+        selectedRarity = 'Rare';
+    }
+
+    // Try selected rarity, fall back to next available
+    const rarityFallback = ['Mythic', 'Legendary', 'Ultra Rare', 'Rare', 'Uncommon', 'Common'];
+    const startIdx = rarityFallback.indexOf(selectedRarity);
+    
+    for (let i = startIdx; i < rarityFallback.length; i++) {
+        if (cardsByRarity[rarityFallback[i]].length > 0) {
+            const randomCard = cardsByRarity[rarityFallback[i]][Math.floor(Math.random() * cardsByRarity[rarityFallback[i]].length)];
+            out.push({ ...randomCard, obtainedAt: Date.now() });
+            break;
+        }
+    }
+
     return out;
 }
 
