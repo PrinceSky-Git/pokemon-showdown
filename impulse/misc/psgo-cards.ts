@@ -99,17 +99,17 @@ const SPECIAL_SUBTYPES: Record<string, { color: string; glow: boolean }> = {
     V: { color: '#00D4AA', glow: true },
     VMAX: { color: '#FF1493', glow: true },
     VSTAR: { color: '#9932CC', glow: true },
-    ex: { color: '#FFB347', glow: true },          // NEW - Modern lowercase ex
+    ex: { color: '#FFB347', glow: true },
     Legend: { color: '#B8860B', glow: true },
     Prime: { color: '#32CD32', glow: true },
     Break: { color: '#FF4500', glow: true },
     'Tag Team': { color: '#4169E1', glow: true },
-    'MEGA': { color: '#8B008B', glow: true },      // NEW
-    'LV.X': { color: '#DC143C', glow: true },      // NEW
-    'Radiant': { color: '#FF1493', glow: true },   // NEW
-    'Amazing': { color: '#FFD700', glow: true },   // NEW
-    'Shining': { color: '#C0C0C0', glow: true },   // NEW
-    '★': { color: '#FFD700', glow: true },         // NEW - Star symbol
+    'MEGA': { color: '#8B008B', glow: true },
+    'LV.X': { color: '#DC143C', glow: true },
+    'Radiant': { color: '#FF1493', glow: true },
+    'Amazing': { color: '#FFD700', glow: true },
+    'Shining': { color: '#C0C0C0', glow: true },
+    '★': { color: '#FFD700', glow: true },
 };
 
 // ================ Utility Functions ================
