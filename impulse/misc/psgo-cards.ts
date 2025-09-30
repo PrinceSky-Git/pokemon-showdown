@@ -1102,145 +1102,15 @@ export const commands: Chat.Commands = {
             }
         },
         sethelp: ['/psgo set [setting], [value] - Configure transfers, sorting, etc.'],
+		 
+		 help(target, room, user) {
+			 if (!this.runBroadcast()) return;
+			 const page = toID(target) || 'main';
 
-       // Replace the existing 'give' command section with these two commands:
-
-confirmgive: 'give',
-async give(target, room, user, connection, cmd) {
-	// ADMIN/MANAGER ONLY - Give any card to any user
-	const isManagerUser = await isManager(user.id);
-	if (!isManagerUser) this.checkCan('bypassall');
-	
-	if (!target) return this.parse('/help psgo give');
-	const parts = target.split(',').map(x => x.trim());
-
-	let targetName: string, cardInput: string;
-	if (parts.length === 2) {
-		const [part1, part2] = parts;
-		if (part1.includes('-')) {
-			cardInput = part1;
-			targetName = part2;
-		} else {
-			targetName = part1;
-			cardInput = part2;
-		}
-	} else {
-		return this.errorReply('Usage: /psgo give [user], [card] OR /psgo give [card], [user]');
-	}
-
-	const targetUser = Users.get(targetName);
-	if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
-	if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
-
-	const result = await getCardFromInput(cardInput);
-	if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
-
-	if (Array.isArray(result)) {
-		let output = '<div style="padding: 10px;">';
-		output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
-		output += '<p>Please specify using the full ID (setId-cardNumber):</p>';
-		for (const c of result) {
-			output += `<div style="margin: 5px 0;">${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})</div>`;
-		}
-		output += '</div>';
-		return this.sendReplyBox(output);
-	}
-
-	const card = result;
-
-	await giveCard(targetUser.id, card.id);
-	if (targetUser.connected) {
-		targetUser.popup(`|html|You received <b>${card.name}</b> from ${user.name}!`);
-	}
-	this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
-	return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
-},
-
-givehelp: ['/psgo give [user], [card] - Give any card to user (requires manager or &)'],
-
-confirmtransfer: 'transfer',
-async transfer(target, room, user, connection, cmd) {
-	// REGULAR USERS - Transfer owned cards
-	if (!target) return this.parse('/help psgo transfer');
-	const parts = target.split(',').map(x => x.trim());
-
-	let targetName: string, cardInput: string;
-	if (parts.length === 2) {
-		const [part1, part2] = parts;
-		if (part1.includes('-')) {
-			cardInput = part1;
-			targetName = part2;
-		} else {
-			targetName = part1;
-			cardInput = part2;
-		}
-	} else {
-		return this.errorReply('Usage: /psgo transfer [user], [card] OR /psgo transfer [card], [user]');
-	}
-
-	const targetUser = Users.get(targetName);
-	if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
-	if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
-	if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
-
-	// Check if target allows transfers
-	const settings = await userSettings.getIn(targetUser.id);
-	if (settings?.transfersEnabled === false) {
-		return this.errorReply(`${targetUser.name} has disabled card transfers.`);
-	}
-
-	const result = await getCardFromInput(cardInput);
-	if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
-
-	if (Array.isArray(result)) {
-		let output = '<div style="padding: 10px;">';
-		output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
-		output += '<p>Please specify using the full ID (setId-cardNumber):</p>';
-		for (const c of result) {
-			output += `<div style="margin: 5px 0;">${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})</div>`;
-		}
-		output += '</div>';
-		return this.sendReplyBox(output);
-	}
-
-	const card = result;
-
-	// Check if user owns the card
-	const userHasCard = await hasCard(user.id, card.id);
-	if (!userHasCard) return this.errorReply('You do not have that card.');
-
-	// Confirmation step
-	if (cmd !== 'confirmtransfer') {
-		return this.popupReply(
-			`|html|<center><button class="button" name="send" value="/psgo confirmtransfer ${targetUser.id}, ${card.id}" style="padding: 15px 30px; font-size: 14px; border-radius: 8px;">` +
-			`Confirm transfer ${card.name} to<br><b style="color: ${Impulse.hashColor(targetUser.id)}">${Chat.escapeHTML(targetUser.name)}</b>` +
-			`</button></center>`
-		);
-	}
-
-	// Execute transfer
-	const success = await takeCard(user.id, card.id);
-	if (!success) return this.errorReply('Transfer failed. Please try again.');
-	await giveCard(targetUser.id, card.id);
-
-	if (targetUser.connected) {
-		targetUser.popup(`|html|${Chat.escapeHTML(user.name)} transferred <b>${card.name}</b> to you!`);
-	}
-	this.modlog('PSGO TRANSFER', targetUser, `from: ${user.id}, card: ${card.id}`);
-	return this.sendReply(`You transferred ${card.name} to ${targetUser.name}.`);
-},
-
-transferhelp: ['/psgo transfer [user], [card] - Transfer your card to another user'],
-
-help(target, room, user) {
-  if (!this.runBroadcast()) return;
-  const page = toID(target) || 'main';
-
-  let output = '';
-
-  switch (page) {
-    case 'main':
-    case '':
+			 let output = ''; 
+			 switch (page) {
+				 case 'main':
+				 case '':
       output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
         `<p><strong>Navigation:</strong></p>` +
         `<button class="button" name="send" value="/psgo help user">User Commands</button>` +
