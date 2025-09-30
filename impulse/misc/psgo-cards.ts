@@ -353,12 +353,16 @@ export const commands: Chat.Commands = {
 		 },
 		 
 		 showhelp: ['/psgo show [setId-cardNumber|setId-cardName] - Show card details'],
-
+		 
 		 confirmgive: 'give',
 		 async give(target, room, user, connection, cmd) {
+			 // ADMIN/MANAGER ONLY - Give any card to any user
+			 const isManagerUser = await isManager(user.id);
+			 if (!isManagerUser) this.checkCan('bypassall');
+	
 			 if (!target) return this.parse('/help psgo give');
 			 const parts = target.split(',').map(x => x.trim());
-    
+
 			 let targetName: string, cardInput: string;
 			 if (parts.length === 2) {
 				 const [part1, part2] = parts;
@@ -379,7 +383,64 @@ export const commands: Chat.Commands = {
 
 			 const result = await getCardFromInput(cardInput);
 			 if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
-    
+			 
+			 if (Array.isArray(result)) {
+				 let output = '<div style="padding: 10px;">';
+				 output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
+				 output += '<p>Please specify using the full ID (setId-cardNumber):</p>';
+				 for (const c of result) {
+					 output += `<div style="margin: 5px 0;">${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})</div>`;
+				 }
+				 output += '</div>';
+				 return this.sendReplyBox(output);
+			 }
+			 
+			 const card = result;
+
+			 await giveCard(targetUser.id, card.id);
+			 if (targetUser.connected) {
+				 targetUser.popup(`|html|You received <b>${card.name}</b> from ${user.name}!`);
+			 }
+			 this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
+			 return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
+		 },
+		 
+		 givehelp: ['/psgo give [user], [card] - Give any card to user (requires manager or &)'],
+
+		 confirmtransfer: 'transfer',
+		 async transfer(target, room, user, connection, cmd) {
+			 // REGULAR USERS - Transfer owned cards
+			 if (!target) return this.parse('/help psgo transfer');
+			 const parts = target.split(',').map(x => x.trim());
+
+			 let targetName: string, cardInput: string;
+			 if (parts.length === 2) {
+				 const [part1, part2] = parts;
+				 if (part1.includes('-')) {
+					 cardInput = part1;
+					 targetName = part2;
+				 } else {
+					 targetName = part1;
+					 cardInput = part2;
+				 }
+			 } else {
+				 return this.errorReply('Usage: /psgo transfer [user], [card] OR /psgo transfer [card], [user]');
+			 }
+			 
+			 const targetUser = Users.get(targetName);
+			 if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
+			 if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
+			 if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
+
+			 // Check if target allows transfers
+			 const settings = await userSettings.getIn(targetUser.id);
+			 if (settings?.transfersEnabled === false) {
+				 return this.errorReply(`${targetUser.name} has disabled card transfers.`);
+			 }
+
+			 const result = await getCardFromInput(cardInput);
+			 if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
+
 			 if (Array.isArray(result)) {
 				 let output = '<div style="padding: 10px;">';
 				 output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
@@ -392,49 +453,33 @@ export const commands: Chat.Commands = {
 			 }
 
 			 const card = result;
-    
-			 // Check admin/manager status FIRST
-			 const isAdminOrManager = await isManager(user.id) || this.checkCan('bypassall');
-    
-			 if (isAdminOrManager) {
-				 await giveCard(targetUser.id, card.id);
-				 if (targetUser.connected) {
-					 targetUser.popup(`|html|You received <b>${card.name}</b> from ${user.name}!`);
-				 }
-				 this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
-				 return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
-			 }
 
-			 // Regular user checks
-			 if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
-
-			 const settings = await userSettings.getIn(targetUser.id);
-			 if (settings?.transfersEnabled === false) {
-				 return this.errorReply(`${targetUser.name} has disabled card transfers.`);
-			 }
-
+			 // Check if user owns the card
 			 const userHasCard = await hasCard(user.id, card.id);
 			 if (!userHasCard) return this.errorReply('You do not have that card.');
 
-			 if (cmd !== 'confirmgive') {
+			 // Confirmation step
+			 if (cmd !== 'confirmtransfer') {
 				 return this.popupReply(
-					 `|html|<center><button class="button" name="send" value="/psgo confirmgive ${targetUser.id}, ${card.id}" style="padding: 15px 30px; font-size: 14px; border-radius: 8px;">` +
-					 `Confirm give ${card.name} to<br><b style="color: ${Impulse.hashColor(targetUser.id)}">${Chat.escapeHTML(targetUser.name)}</b>` +
+					 `|html|<center><button class="button" name="send" value="/psgo confirmtransfer ${targetUser.id}, ${card.id}" style="padding: 15px 30px; font-size: 14px; border-radius: 8px;">` +
+					 `Confirm transfer ${card.name} to<br><b style="color: ${Impulse.hashColor(targetUser.id)}">${Chat.escapeHTML(targetUser.name)}</b>` +
 					 `</button></center>`
 				 );
 			 }
 
+			 // Execute transfer
 			 const success = await takeCard(user.id, card.id);
 			 if (!success) return this.errorReply('Transfer failed. Please try again.');
 			 await giveCard(targetUser.id, card.id);
 
 			 if (targetUser.connected) {
-				 targetUser.popup(`|html|${Chat.escapeHTML(user.name)} gave you <b>${card.name}</b>!`);
+				 targetUser.popup(`|html|${Chat.escapeHTML(user.name)} transferred <b>${card.name}</b> to you!`);
 			 }
-			 return this.sendReply(`You gave ${card.name} to ${targetUser.name}.`);
+			 this.modlog('PSGO TRANSFER', targetUser, `from: ${user.id}, card: ${card.id}`);
+			 return this.sendReply(`You transferred ${card.name} to ${targetUser.name}.`);
 		 },
-		 
-		 givehelp: ['/psgo give [user], [card] - Transfer card to user (admins can give any card)'],
+
+		 transferhelp: ['/psgo transfer [user], [card] - Transfer your card to another user'],
 		 
         async collection(target, room, user) {
             if (!this.runBroadcast()) return;
@@ -1058,181 +1103,321 @@ export const commands: Chat.Commands = {
         },
         sethelp: ['/psgo set [setting], [value] - Configure transfers, sorting, etc.'],
 
-       help(target, room, user) {
-          if (!this.runBroadcast()) return;
-          const page = toID(target) || 'main';
-    
-          let output = '';
-    
-          switch (page) {
-             case 'main':
-             case '':
-                output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
-                   `<p><strong>Navigation:</strong></p>` +
-                   `<button class="button" name="send" value="/psgo help user">User Commands</button>` +
-                   `<button class="button" name="send" value="/psgo help admin">Admin Commands</button>` +
-                   `<button class="button" name="send" value="/psgo help settings">Settings</button>` +
-                   `<button class="button" name="send" value="/psgo help examples">Examples</button>` +
-                   `<hr>` +
-                   `<p><strong>Quick Start:</strong></p>` +
-                   `<ul>` +
-                   `<li>Use <code>/psgo shop</code> to browse packs</li>` +
-                   `<li>Use <code>/psgo buy [pack]</code> to purchase packs</li>` +
-                   `<li>Use <code>/psgo open [pack]</code> to open packs</li>` +
-                   `<li>Use <code>/psgo collection</code> to view your cards</li>` +
-                   `</ul>` +
-                   `<p><strong>Important Note:</strong> If multiple cards share the same name, use the full ID format (setId-cardNumber) instead of setId-cardName</p>` +
-                   `</div>`;
-                break;
-             case 'user':
-             case '1':
-                output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
-                   `<h3>User Commands</h3>` +
-                   `<table style="width: 100%; border-collapse: collapse;">` +
-                   `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
-                   `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Usage</th>` +
-                   `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo show</code></td>` +
-                   `<td style="padding: 8px;">/psgo show base1-25<br>/psgo show base1-charizard<br>(If multiple cards match, you'll see a list)</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo give</code></td>` +
-                   `<td style="padding: 8px;">/psgo give username, base1-25<br>/psgo give base1-25, username</td>` +
-                   `<td style="padding: 8px;">Card owner<br>(Admins: any card)</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo collection</code></td>` +
-                   `<td style="padding: 8px;">/psgo collection<br>/psgo collection username<br>/psgo collection username, 2, points</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo ladder</code></td>` +
-                   `<td style="padding: 8px;">/psgo ladder</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo cards</code></td>` +
-                   `<td style="padding: 8px;">/psgo cards<br>/psgo cards set:base1<br>/psgo cards rarity:mythic<br>/psgo cards charizard</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo shop</code></td>` +
-                   `<td style="padding: 8px;">/psgo shop</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo buy</code></td>` +
-                   `<td style="padding: 8px;">/psgo buy base1<br>/psgo buy Base Set</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo open</code></td>` +
-                   `<td style="padding: 8px;">/psgo open base1</td>` +
-                   `<td style="padding: 8px;">Pack owner</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo packs</code></td>` +
-                   `<td style="padding: 8px;">/psgo packs</td>` +
-                   `<td style="padding: 8px;">Everyone</td></tr>` +
-                   `</table>` +
-                   `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
-                   `</div>`;
-                break;
-             case 'admin':
-             case '2':
-                output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
-                   `<h3>Admin Commands</h3>` +
-                   `<table style="width: 100%; border-collapse: collapse;">` +
-                   `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
-                   `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Usage</th>` +
-                   `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo add</code></td>` +
-                   `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo add base1, 25, Charizard, [url], Rare, Base Set, Fire<br><br>` +
-                   `<strong>Pack:</strong><br>/psgo add base1, Base Set, Generation 1, 1999-01-09, 100, shop</td>` +
-                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo edit</code></td>` +
-                   `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo edit base1-25, Charizard, [url], Rare, Base Set, Fire - EX<br><br>` +
-                   `<strong>Pack:</strong><br>/psgo edit base1, Base Set, Gen 1, 1999-01-09, 150, shop<br><br>` +
-                   `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
-                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo delete</code></td>` +
-                   `<td style="padding: 8px;">/psgo delete base1-25<br>/psgo delete base1<br><br>` +
-                   `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
-                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo cleanup</code></td>` +
-                   `<td style="padding: 8px;">/psgo cleanup<br>(Removes invalid/corrupted entries)</td>` +
-                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo manage</code></td>` +
-                   `<td style="padding: 8px;"><strong>Add manager:</strong> /psgo manage add, username<br>` +
-                   `<strong>Remove:</strong> /psgo manage remove, username<br>` +
-                   `<strong>List:</strong> /psgo manage list<br>` +
-                   `<strong>Credits:</strong> /psgo manage credits, username, 5<br>` +
-                   `<strong>Take card:</strong> /psgo manage take, username, base1-25</td>` +
-                   `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
-                   `</table>` +
-                   `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
-                   `</div>`;
-                break;
-             case 'settings':
-             case '3':
-                output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
-                   `<h3>Settings Commands</h3>` +
-                   `<table style="width: 100%; border-collapse: collapse;">` +
-                   `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
-                   `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Usage</th>` +
-                   `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo set transfers</code></td>` +
-                   `<td style="padding: 8px;">/psgo set transfers, on<br>/psgo set transfers, off</td>` +
-                   `<td style="padding: 8px;">Self</td></tr>` +
-                   `<tr><td style="padding: 8px;"><code>/psgo set sort</code></td>` +
-                   `<td style="padding: 8px;">/psgo set sort, rarity<br>/psgo set sort, points<br>/psgo set sort, types<br>/psgo set sort, name<br>/psgo set sort, date</td>` +
-                   `<td style="padding: 8px;">Self</td></tr>` +
-                   `</table>` +
-                   `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
-                   `</div>`;
-                break;
-             case 'examples':
-             case '4':
-                output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
-                   `<h3>Usage Examples</h3>` +
-                   `<p><strong>Card Format:</strong></p>` +
-                   `<ul>` +
-                   `<li><code>setId-cardNumber</code> → base1-25 (ALWAYS unique)</li>` +
-                   `<li><code>setId-cardname</code> → base1-charizard (may match multiple cards)</li>` +
-                   `</ul>` +
-                   `<p><strong>Handling Duplicate Names:</strong></p>` +
-                   `<ul>` +
-                   `<li>If you use <code>/psgo show base1-pikachu</code> and multiple "Pikachu" cards exist in base1, you'll see a list</li>` +
-                   `<li>Click the button or use the full ID: <code>/psgo show base1-25</code></li>` +
-                   `<li>For give/edit/delete commands, always use full ID (setId-cardNumber) when duplicates exist</li>` +
-                   `</ul>` +
-                   `<p><strong>Types Format:</strong></p>` +
-                   `<ul>` +
-                   `<li>Basic: <code>Fire</code>, <code>Water</code>, <code>Grass</code></li>` +
-                   `<li>Dual: <code>Fire/Flying</code>, <code>Water/Psychic</code></li>` +
-                   `<li>Special: <code>Fire - GX</code>, <code>Water - VMAX</code>, <code>Psychic - ex</code></li>` +
-                   `</ul>` +
-                   `<p><strong>Special Subtypes (Bonus Points):</strong></p>` +
-                   `<ul>` +
-                   `<li>+2: BREAK</li>` +
-                   `<li>+3: EX, GX, V, ex, MEGA, LV.X, RADIANT, AMAZING</li>` +
-                   `<li>+4: LEGEND, PRIME, SHINING, ★</li>` +
-                   `<li>+5: VMAX, VSTAR</li>` +
-                   `<li>+6: TAG TEAM</li>` +
-                   `</ul>` +
-                   `<p><strong>Pack Flags:</strong></p>` +
-                   `<ul>` +
-                   `<li><code>shop</code> - Available in shop for coins</li>` +
-                   `<li><code>credit</code> - Available for pack credits</li>` +
-                   `<li><code>shop,credit</code> - Available for both</li>` +
-                   `</ul>` +
-                   `<p><strong>Common Workflows:</strong></p>` +
-                   `<ol>` +
-                   `<li>Add pack → <code>/psgo add base1, Base Set, Gen 1, 1999-01-09, 100, shop</code></li>` +
-                   `<li>Add cards → <code>/psgo add base1, 1, Bulbasaur, [url], Common, Base Set, Grass</code></li>` +
-                   `<li>Add variant → <code>/psgo add base1, 25, Pikachu, [url], Rare, Base Set, Electric</code></li>` +
-                   `<li>Add another variant → <code>/psgo add base1, 58, Pikachu, [url], Common, Base Set, Electric</code></li>` +
-                   `<li>User buys → <code>/psgo buy base1</code></li>` +
-                   `<li>User opens → <code>/psgo open base1</code></li>` +
-                   `<li>View collection → <code>/psgo collection</code></li>` +
-                   `<li>Show specific card → <code>/psgo show base1-25</code> or <code>/psgo show base1-pikachu</code></li>` +
-                   `</ol>` +
-                   `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
-                   `</div>`;
-                break;
-             default:
-                output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
-                   `<p>Invalid help page. Use <code>/psgo help</code> to see available sections.</p>` +
-                   `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
-                   `</div>`;
-          }
-          return this.sendReplyBox(output);
-       },
+       // Replace the existing 'give' command section with these two commands:
+
+confirmgive: 'give',
+async give(target, room, user, connection, cmd) {
+	// ADMIN/MANAGER ONLY - Give any card to any user
+	const isManagerUser = await isManager(user.id);
+	if (!isManagerUser) this.checkCan('bypassall');
+	
+	if (!target) return this.parse('/help psgo give');
+	const parts = target.split(',').map(x => x.trim());
+
+	let targetName: string, cardInput: string;
+	if (parts.length === 2) {
+		const [part1, part2] = parts;
+		if (part1.includes('-')) {
+			cardInput = part1;
+			targetName = part2;
+		} else {
+			targetName = part1;
+			cardInput = part2;
+		}
+	} else {
+		return this.errorReply('Usage: /psgo give [user], [card] OR /psgo give [card], [user]');
+	}
+
+	const targetUser = Users.get(targetName);
+	if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
+	if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
+
+	const result = await getCardFromInput(cardInput);
+	if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
+
+	if (Array.isArray(result)) {
+		let output = '<div style="padding: 10px;">';
+		output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
+		output += '<p>Please specify using the full ID (setId-cardNumber):</p>';
+		for (const c of result) {
+			output += `<div style="margin: 5px 0;">${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})</div>`;
+		}
+		output += '</div>';
+		return this.sendReplyBox(output);
+	}
+
+	const card = result;
+
+	await giveCard(targetUser.id, card.id);
+	if (targetUser.connected) {
+		targetUser.popup(`|html|You received <b>${card.name}</b> from ${user.name}!`);
+	}
+	this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
+	return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
+},
+
+givehelp: ['/psgo give [user], [card] - Give any card to user (requires manager or &)'],
+
+confirmtransfer: 'transfer',
+async transfer(target, room, user, connection, cmd) {
+	// REGULAR USERS - Transfer owned cards
+	if (!target) return this.parse('/help psgo transfer');
+	const parts = target.split(',').map(x => x.trim());
+
+	let targetName: string, cardInput: string;
+	if (parts.length === 2) {
+		const [part1, part2] = parts;
+		if (part1.includes('-')) {
+			cardInput = part1;
+			targetName = part2;
+		} else {
+			targetName = part1;
+			cardInput = part2;
+		}
+	} else {
+		return this.errorReply('Usage: /psgo transfer [user], [card] OR /psgo transfer [card], [user]');
+	}
+
+	const targetUser = Users.get(targetName);
+	if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
+	if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
+	if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
+
+	// Check if target allows transfers
+	const settings = await userSettings.getIn(targetUser.id);
+	if (settings?.transfersEnabled === false) {
+		return this.errorReply(`${targetUser.name} has disabled card transfers.`);
+	}
+
+	const result = await getCardFromInput(cardInput);
+	if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
+
+	if (Array.isArray(result)) {
+		let output = '<div style="padding: 10px;">';
+		output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
+		output += '<p>Please specify using the full ID (setId-cardNumber):</p>';
+		for (const c of result) {
+			output += `<div style="margin: 5px 0;">${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})</div>`;
+		}
+		output += '</div>';
+		return this.sendReplyBox(output);
+	}
+
+	const card = result;
+
+	// Check if user owns the card
+	const userHasCard = await hasCard(user.id, card.id);
+	if (!userHasCard) return this.errorReply('You do not have that card.');
+
+	// Confirmation step
+	if (cmd !== 'confirmtransfer') {
+		return this.popupReply(
+			`|html|<center><button class="button" name="send" value="/psgo confirmtransfer ${targetUser.id}, ${card.id}" style="padding: 15px 30px; font-size: 14px; border-radius: 8px;">` +
+			`Confirm transfer ${card.name} to<br><b style="color: ${Impulse.hashColor(targetUser.id)}">${Chat.escapeHTML(targetUser.name)}</b>` +
+			`</button></center>`
+		);
+	}
+
+	// Execute transfer
+	const success = await takeCard(user.id, card.id);
+	if (!success) return this.errorReply('Transfer failed. Please try again.');
+	await giveCard(targetUser.id, card.id);
+
+	if (targetUser.connected) {
+		targetUser.popup(`|html|${Chat.escapeHTML(user.name)} transferred <b>${card.name}</b> to you!`);
+	}
+	this.modlog('PSGO TRANSFER', targetUser, `from: ${user.id}, card: ${card.id}`);
+	return this.sendReply(`You transferred ${card.name} to ${targetUser.name}.`);
+},
+
+transferhelp: ['/psgo transfer [user], [card] - Transfer your card to another user'],
+
+help(target, room, user) {
+  if (!this.runBroadcast()) return;
+  const page = toID(target) || 'main';
+
+  let output = '';
+
+  switch (page) {
+    case 'main':
+    case '':
+      output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+        `<p><strong>Navigation:</strong></p>` +
+        `<button class="button" name="send" value="/psgo help user">User Commands</button>` +
+        `<button class="button" name="send" value="/psgo help admin">Admin Commands</button>` +
+        `<button class="button" name="send" value="/psgo help settings">Settings</button>` +
+        `<button class="button" name="send" value="/psgo help examples">Examples</button>` +
+        `<hr>` +
+        `<p><strong>Quick Start:</strong></p>` +
+        `<ul>` +
+        `<li>Use <code>/psgo shop</code> to browse packs</li>` +
+        `<li>Use <code>/psgo buy [pack]</code> to purchase packs</li>` +
+        `<li>Use <code>/psgo open [pack]</code> to open packs</li>` +
+        `<li>Use <code>/psgo collection</code> to view your cards</li>` +
+        `<li>Use <code>/psgo transfer [user], [card]</code> to trade cards</li>` +
+        `</ul>` +
+        `<p><strong>Important Note:</strong> If multiple cards share the same name, use the full ID format (setId-cardNumber) instead of setId-cardName</p>` +
+        `</div>`;
+      break;
+    case 'user':
+    case '1':
+      output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+        `<h3>User Commands</h3>` +
+        `<table style="width: 100%; border-collapse: collapse;">` +
+        `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
+        `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Usage</th>` +
+        `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo show</code></td>` +
+        `<td style="padding: 8px;">/psgo show base1-25<br>/psgo show base1-charizard<br>(If multiple cards match, you'll see a list)</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo transfer</code></td>` +
+        `<td style="padding: 8px;">/psgo transfer username, base1-25<br>/psgo transfer base1-25, username<br>(Transfers YOUR card to another user)</td>` +
+        `<td style="padding: 8px;">Card owner</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo collection</code></td>` +
+        `<td style="padding: 8px;">/psgo collection<br>/psgo collection username<br>/psgo collection username, 2, points</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo ladder</code></td>` +
+        `<td style="padding: 8px;">/psgo ladder</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo cards</code></td>` +
+        `<td style="padding: 8px;">/psgo cards<br>/psgo cards set:base1<br>/psgo cards rarity:mythic<br>/psgo cards charizard</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo shop</code></td>` +
+        `<td style="padding: 8px;">/psgo shop</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo buy</code></td>` +
+        `<td style="padding: 8px;">/psgo buy base1<br>/psgo buy Base Set</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo open</code></td>` +
+        `<td style="padding: 8px;">/psgo open base1</td>` +
+        `<td style="padding: 8px;">Pack owner</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo packs</code></td>` +
+        `<td style="padding: 8px;">/psgo packs</td>` +
+        `<td style="padding: 8px;">Everyone</td></tr>` +
+        `</table>` +
+        `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
+        `</div>`;
+      break;
+    case 'admin':
+    case '2':
+      output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+        `<h3>Admin Commands</h3>` +
+        `<table style="width: 100%; border-collapse: collapse;">` +
+        `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
+        `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Usage</th>` +
+        `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo give</code></td>` +
+        `<td style="padding: 8px;">/psgo give username, base1-25<br>/psgo give base1-25, username<br>(Gives ANY card to user, no ownership required)</td>` +
+        `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo add</code></td>` +
+        `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo add base1, 25, Charizard, [url], Rare, Base Set, Fire<br><br>` +
+        `<strong>Pack:</strong><br>/psgo add base1, Base Set, Generation 1, 1999-01-09, 100, shop</td>` +
+        `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo edit</code></td>` +
+        `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo edit base1-25, Charizard, [url], Rare, Base Set, Fire - EX<br><br>` +
+        `<strong>Pack:</strong><br>/psgo edit base1, Base Set, Gen 1, 1999-01-09, 150, shop<br><br>` +
+        `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
+        `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo delete</code></td>` +
+        `<td style="padding: 8px;">/psgo delete base1-25<br>/psgo delete base1<br><br>` +
+        `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
+        `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo cleanup</code></td>` +
+        `<td style="padding: 8px;">/psgo cleanup<br>(Removes invalid/corrupted entries)</td>` +
+        `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo manage</code></td>` +
+        `<td style="padding: 8px;"><strong>Add manager:</strong> /psgo manage add, username<br>` +
+        `<strong>Remove:</strong> /psgo manage remove, username<br>` +
+        `<strong>List:</strong> /psgo manage list<br>` +
+        `<strong>Credits:</strong> /psgo manage credits, username, 5<br>` +
+        `<strong>Take card:</strong> /psgo manage take, username, base1-25</td>` +
+        `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
+        `</table>` +
+        `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
+        `</div>`;
+      break;
+    case 'settings':
+    case '3':
+      output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+        `<h3>Settings Commands</h3>` +
+        `<table style="width: 100%; border-collapse: collapse;">` +
+        `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
+        `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Usage</th>` +
+        `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo set transfers</code></td>` +
+        `<td style="padding: 8px;">/psgo set transfers, on<br>/psgo set transfers, off<br>(Controls if others can transfer cards to you)</td>` +
+        `<td style="padding: 8px;">Self</td></tr>` +
+        `<tr><td style="padding: 8px;"><code>/psgo set sort</code></td>` +
+        `<td style="padding: 8px;">/psgo set sort, rarity<br>/psgo set sort, points<br>/psgo set sort, types<br>/psgo set sort, name<br>/psgo set sort, date</td>` +
+        `<td style="padding: 8px;">Self</td></tr>` +
+        `</table>` +
+        `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
+        `</div>`;
+      break;
+    case 'examples':
+    case '4':
+      output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+        `<h3>Usage Examples</h3>` +
+        `<p><strong>Card Format:</strong></p>` +
+        `<ul>` +
+        `<li><code>setId-cardNumber</code> → base1-25 (ALWAYS unique)</li>` +
+        `<li><code>setId-cardname</code> → base1-charizard (may match multiple cards)</li>` +
+        `</ul>` +
+        `<p><strong>Handling Duplicate Names:</strong></p>` +
+        `<ul>` +
+        `<li>If you use <code>/psgo show base1-pikachu</code> and multiple "Pikachu" cards exist in base1, you'll see a list</li>` +
+        `<li>Click the button or use the full ID: <code>/psgo show base1-25</code></li>` +
+        `<li>For give/transfer/edit/delete commands, always use full ID (setId-cardNumber) when duplicates exist</li>` +
+        `</ul>` +
+        `<p><strong>Transfer vs Give:</strong></p>` +
+        `<ul>` +
+        `<li><code>/psgo transfer</code> - Regular users transfer THEIR OWN cards</li>` +
+        `<li><code>/psgo give</code> - Admins/Managers give ANY card (doesn't need to own it)</li>` +
+        `</ul>` +
+        `<p><strong>Types Format:</strong></p>` +
+        `<ul>` +
+        `<li>Basic: <code>Fire</code>, <code>Water</code>, <code>Grass</code></li>` +
+        `<li>Dual: <code>Fire/Flying</code>, <code>Water/Psychic</code></li>` +
+        `<li>Special: <code>Fire - GX</code>, <code>Water - VMAX</code>, <code>Psychic - ex</code></li>` +
+        `</ul>` +
+        `<p><strong>Special Subtypes (Bonus Points):</strong></p>` +
+        `<ul>` +
+        `<li>+2: BREAK</li>` +
+        `<li>+3: EX, GX, V, ex, MEGA, LV.X, RADIANT, AMAZING</li>` +
+        `<li>+4: LEGEND, PRIME, SHINING, ★</li>` +
+        `<li>+5: VMAX, VSTAR</li>` +
+        `<li>+6: TAG TEAM</li>` +
+        `</ul>` +
+        `<p><strong>Pack Flags:</strong></p>` +
+        `<ul>` +
+        `<li><code>shop</code> - Available in shop for coins</li>` +
+        `<li><code>credit</code> - Available for pack credits</li>` +
+        `<li><code>shop,credit</code> - Available for both</li>` +
+        `</ul>` +
+        `<p><strong>Common Workflows:</strong></p>` +
+        `<ol>` +
+        `<li>Add pack → <code>/psgo add base1, Base Set, Gen 1, 1999-01-09, 100, shop</code></li>` +
+        `<li>Add cards → <code>/psgo add base1, 1, Bulbasaur, [url], Common, Base Set, Grass</code></li>` +
+        `<li>Add variant → <code>/psgo add base1, 25, Pikachu, [url], Rare, Base Set, Electric</code></li>` +
+        `<li>Add another variant → <code>/psgo add base1, 58, Pikachu, [url], Common, Base Set, Electric</code></li>` +
+        `<li>User buys → <code>/psgo buy base1</code></li>` +
+        `<li>User opens → <code>/psgo open base1</code></li>` +
+        `<li>View collection → <code>/psgo collection</code></li>` +
+        `<li>Show specific card → <code>/psgo show base1-25</code> or <code>/psgo show base1-pikachu</code></li>` +
+        `<li>Transfer card → <code>/psgo transfer friendname, base1-25</code></li>` +
+        `<li>Admin give card → <code>/psgo give newuser, base1-25</code></li>` +
+        `</ol>` +
+        `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
+        `</div>`;
+      break;
+    default:
+      output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+        `<p>Invalid help page. Use <code>/psgo help</code> to see available sections.</p>` +
+        `<p><button class="button" name="send" value="/psgo help">Back to Main</button></p>` +
+        `</div>`;
+  }
+  return this.sendReplyBox(output);
+},
     },
 
     showcase(target, room, user) {
