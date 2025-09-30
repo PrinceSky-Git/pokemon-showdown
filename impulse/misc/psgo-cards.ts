@@ -94,11 +94,22 @@ const RARITY_COLORS: Record<CardRarity, string> = {
 };
 
 const SPECIAL_SUBTYPES: Record<string, { color: string; glow: boolean }> = {
-    EX: { color: '#FFD700', glow: true }, GX: { color: '#FF6B35', glow: true },
-    V: { color: '#00D4AA', glow: true }, VMAX: { color: '#FF1493', glow: true },
-    VSTAR: { color: '#9932CC', glow: true }, Legend: { color: '#B8860B', glow: true },
-    Prime: { color: '#32CD32', glow: true }, Break: { color: '#FF4500', glow: true },
+    EX: { color: '#FFD700', glow: true },
+    GX: { color: '#FF6B35', glow: true },
+    V: { color: '#00D4AA', glow: true },
+    VMAX: { color: '#FF1493', glow: true },
+    VSTAR: { color: '#9932CC', glow: true },
+    ex: { color: '#FFB347', glow: true },          // NEW - Modern lowercase ex
+    Legend: { color: '#B8860B', glow: true },
+    Prime: { color: '#32CD32', glow: true },
+    Break: { color: '#FF4500', glow: true },
     'Tag Team': { color: '#4169E1', glow: true },
+    'MEGA': { color: '#8B008B', glow: true },      // NEW
+    'LV.X': { color: '#DC143C', glow: true },      // NEW
+    'Radiant': { color: '#FF1493', glow: true },   // NEW
+    'Amazing': { color: '#FFD700', glow: true },   // NEW
+    'Shining': { color: '#C0C0C0', glow: true },   // NEW
+    '★': { color: '#FFD700', glow: true },         // NEW - Star symbol
 };
 
 // ================ Utility Functions ================
@@ -181,10 +192,12 @@ function getSubtypeBonus(types: string): number {
     if (!types) return 0;
     const t = types.toUpperCase();
     if (t.includes('VMAX') || t.includes('VSTAR')) return 5;
-    if (t.includes('GX') || t.includes('EX') || t.includes('V ')) return 3;
-    if (t.includes('LEGEND') || t.includes('PRIME')) return 4;
     if (t.includes('TAG TEAM')) return 6;
+    if (t.includes('LEGEND') || t.includes('PRIME')) return 4;
+    if (t.includes('GX') || t.includes('EX') || t.includes('V ') || t.includes(' EX')) return 3;
+    if (t.includes('MEGA') || t.includes('LV.X') || t.includes('RADIANT') || t.includes('AMAZING')) return 3;
     if (t.includes('BREAK')) return 2;
+    if (t.includes('SHINING') || t.includes('★')) return 4;
     return 0;
 }
 
