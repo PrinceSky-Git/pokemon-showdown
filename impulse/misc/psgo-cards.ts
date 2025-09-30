@@ -135,40 +135,42 @@ function getCardByIdSync(cardId: string): Card | null {
     return allCards[cardId] || null;
 }
 
-async function getCardByNameId(nameId: string): Promise<Card | null> {
+async function getCardByNameId(nameId: string): Promise<Card[]> {
     const allCards = await getAllCards();
-    // Build nameId lookup on the fly
+    const matches: Card[] = [];
     for (const cardId in allCards) {
         if (allCards[cardId].nameId === nameId) {
-            return allCards[cardId];
+            matches.push(allCards[cardId]);
         }
     }
-    return null;
+    return matches;
 }
 
-function getCardByNameIdSync(nameId: string): Card | null {
+function getCardByNameIdSync(nameId: string): Card[] {
     const allCards = getAllCardsSync();
-    // Build nameId lookup on the fly
+    const matches: Card[] = [];
     for (const cardId in allCards) {
         if (allCards[cardId].nameId === nameId) {
-            return allCards[cardId];
+            matches.push(allCards[cardId]);
         }
     }
-    return null;
+    return matches;
 }
 
-async function getCardFromInput(input: string): Promise<Card | null> {
+async function getCardFromInput(input: string): Promise<Card | Card[] | null> {
     if (!input || !input.includes('-')) return null;
     const byId = await getCardById(input);
     if (byId) return byId;
-    return await getCardByNameId(input);
+    const byNameId = await getCardByNameId(input);
+    return byNameId.length > 0 ? (byNameId.length === 1 ? byNameId[0] : byNameId) : null;
 }
 
-function getCardFromInputSync(input: string): Card | null {
+function getCardFromInputSync(input: string): Card | Card[] | null {
     if (!input || !input.includes('-')) return null;
     const byId = getCardByIdSync(input);
     if (byId) return byId;
-    return getCardByNameIdSync(input);
+    const byNameId = getCardByNameIdSync(input);
+    return byNameId.length > 0 ? (byNameId.length === 1 ? byNameId[0] : byNameId) : null;
 }
 
 async function toPackCode(packInput: string): Promise<string> {
@@ -328,80 +330,108 @@ function displayCard(card: Card): string {
 // ================ COMMANDS ================
 export const commands: Chat.Commands = {
     psgo: {
-        async show(target, room, user) {
-            if (!this.runBroadcast()) return;
-            if (!target) return this.parse('/help psgo show');
-            const card = await getCardFromInput(target);
-            if (!card) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
-            return this.sendReplyBox(displayCard(card));
-        },
-        showhelp: ['/psgo show [setId-cardNumber|setId-cardName] - Show card details'],
+		 async show(target, room, user) {
+			 if (!this.runBroadcast()) return;
+			 if (!target) return this.parse('/help psgo show');
+			 const result = await getCardFromInput(target);
+			 if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
+    
+			 if (Array.isArray(result)) {
+				 // Multiple cards found with same name
+				 let output = '<div style="padding: 10px;">';
+				 output += `<h3>Multiple cards found for "${target}"</h3>`;
+				 output += '<p>Please select one:</p>';
+				 for (const card of result) {
+					 output += `<div style="margin: 5px 0;">`;
+					 output += `<button class="button" name="send" value="/psgo show ${card.id}">${card.name} - ${card.set} #${card.cardNumber}</button>`;
+					 output += `</div>`;
+				 }
+				 output += '</div>';
+				 return this.sendReplyBox(output);
+			 }
+			 return this.sendReplyBox(displayCard(result));
+		 },
+		 
+		 showhelp: ['/psgo show [setId-cardNumber|setId-cardName] - Show card details'],
 
-        confirmgive: 'give',
-        async give(target, room, user, connection, cmd) {
-            if (!target) return this.parse('/help psgo give');
-            const parts = target.split(',').map(x => x.trim());
-            
-            let targetName: string, cardInput: string;
-            if (parts.length === 2) {
-                const [part1, part2] = parts;
-                if (part1.includes('-')) {
-                    cardInput = part1;
-                    targetName = part2;
-                } else {
-                    targetName = part1;
-                    cardInput = part2;
-                }
-            } else {
-                return this.errorReply('Usage: /psgo give [user], [card] OR /psgo give [card], [user]');
-            }
+		 confirmgive: 'give',
+		 async give(target, room, user, connection, cmd) {
+			 if (!target) return this.parse('/help psgo give');
+			 const parts = target.split(',').map(x => x.trim());
+    
+			 let targetName: string, cardInput: string;
+			 if (parts.length === 2) {
+				 const [part1, part2] = parts;
+				 if (part1.includes('-')) {
+					 cardInput = part1;
+					 targetName = part2;
+				 } else {
+					 targetName = part1;
+					 cardInput = part2;
+				 }
+			 } else {
+				 return this.errorReply('Usage: /psgo give [user], [card] OR /psgo give [card], [user]');
+			 }
 
-            const targetUser = Users.get(targetName);
-            if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
-            if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
-            if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
+			 const targetUser = Users.get(targetName);
+			 if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
+			 if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
+			 if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
 
-            const settings = await userSettings.getIn(targetUser.id);
-            if (settings?.transfersEnabled === false) {
-                return this.errorReply(`${targetUser.name} has disabled card transfers.`);
-            }
+			 const settings = await userSettings.getIn(targetUser.id);
+			 if (settings?.transfersEnabled === false) {
+				 return this.errorReply(`${targetUser.name} has disabled card transfers.`);
+			 }
 
-            const card = await getCardFromInput(cardInput);
-            if (!card) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
-            
-            const isAdminOrManager = await isManager(user.id) || this.can('globalban', null, room);
-            
-            if (isAdminOrManager) {
-                await giveCard(targetUser.id, card.id);
-                if (targetUser.connected) {
-                    targetUser.popup(`|html|You received <b>${card.name}</b> from ${user.name}!`);
-                }
-                this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
-                return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
-            }
+			 const result = await getCardFromInput(cardInput);
+			 if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
+    
+			 if (Array.isArray(result)) {
+				 let output = '<div style="padding: 10px;">';
+				 output += `<h3>Multiple cards found for "${cardInput}"</h3>`;
+				 output += '<p>Please specify using the full ID (setId-cardNumber):</p>';
+				 for (const c of result) {
+					 output += `<div style="margin: 5px 0;">${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})</div>`;
+				 }
+				 output += '</div>';
+				 return this.sendReplyBox(output);
+			 }
+			 const card = result;
+    
+			 const isAdminOrManager = await isManager(user.id) || this.checkCan('roomowner');
+    
+			 if (isAdminOrManager) {
+				 await giveCard(targetUser.id, card.id);
+				 if (targetUser.connected) {
+					 targetUser.popup(`|html|You received <b>${card.name}</b> from ${user.name}!`);
+				 }
+				 this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
+				 return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
+			 }
 
-            const userHasCard = await hasCard(user.id, card.id);
-            if (!userHasCard) return this.errorReply('You do not have that card.');
+			 const userHasCard = await hasCard(user.id, card.id);
+			 if (!userHasCard) return this.errorReply('You do not have that card.');
 
-            if (cmd !== 'confirmgive') {
-                return this.popupReply(
-                    `|html|<center><button class="button" name="send" value="/psgo confirmgive ${targetUser.id}, ${card.id}" style="padding: 15px 30px; font-size: 14px; border-radius: 8px;">` +
-                    `Confirm give ${card.name} to<br><b style="color: ${Impulse.hashColor(targetUser.id)}">${Chat.escapeHTML(targetUser.name)}</b>` +
-                    `</button></center>`
-                );
-            }
+			 if (cmd !== 'confirmgive') {
+				 return this.popupReply(
+					 `|html|<center><button class="button" name="send" value="/psgo confirmgive ${targetUser.id}, ${card.id}" style="padding: 15px 30px; font-size: 14px; border-radius: 8px;">` +
+					 `Confirm give ${card.name} to<br><b style="color: ${Impulse.hashColor(targetUser.id)}">${Chat.escapeHTML(targetUser.name)}</b>` +
+					 `</button></center>`
+				 );
+			 }
 
-            const success = await takeCard(user.id, card.id);
-            if (!success) return this.errorReply('Transfer failed. Please try again.');
-            await giveCard(targetUser.id, card.id);
+			 const success = await takeCard(user.id, card.id);
+			 if (!success) return this.errorReply('Transfer failed. Please try again.');
+			 await giveCard(targetUser.id, card.id);
 
-            if (targetUser.connected) {
-                targetUser.popup(`|html|${Chat.escapeHTML(user.name)} gave you <b>${card.name}</b>!`);
-            }
-            return this.sendReply(`You gave ${card.name} to ${targetUser.name}.`);
-        },
-        givehelp: ['/psgo give [user], [card] - Transfer card to user (admins can give any card)'],
-
+			 if (targetUser.connected) {
+				 targetUser.popup(`|html|${Chat.escapeHTML(user.name)} gave you <b>${card.name}</b>!`);
+			 }
+			 return this.sendReply(`You gave ${card.name} to ${targetUser.name}.`);
+		 },
+		 
+		 givehelp: ['/psgo give [user], [card] - Transfer card to user (admins can give any card)'],
+		 
         async collection(target, room, user) {
             if (!this.runBroadcast()) return;
             
@@ -802,8 +832,9 @@ export const commands: Chat.Commands = {
 			 const id = parts[0];
 
 			 // Try to edit as card first
-			 const card = await getCardFromInput(id);
-			 if (card && parts.length === 6) {
+			 const result = await getCardFromInput(id);
+			 if (result && !Array.isArray(result) && parts.length === 6) {
+				 const card = result;
 				 const [, name, image, rarity, set, types] = parts;
 				 const newNameId = makeCardNameId(card.setId, name);
 				 const allCards = await getAllCards();
@@ -816,7 +847,6 @@ export const commands: Chat.Commands = {
 						 }
 					 }
 				 }
-
 				 allCards[card.id] = {
 					 id: card.id,
 					 name,
@@ -832,6 +862,15 @@ export const commands: Chat.Commands = {
 				 this.modlog('PSGO EDIT CARD', null, card.id);
 				 return this.sendReply(`Edited card: ${name}`);
 			 }
+			 
+			 if (result && Array.isArray(result)) {
+				 let output = 'Multiple cards found. Please specify using full ID (setId-cardNumber):\n';
+				 for (const c of result) {
+					 output += `${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})\n`;
+				 }
+				 return this.sendReply(output);
+			 }
+    
 			 // Try to edit as pack
 			 const packCode = toID(id);
 			 const allPacks = await getAllPacks();
@@ -854,23 +893,30 @@ export const commands: Chat.Commands = {
 			 return this.errorReply('ID not found or wrong parameter count.');
 		 },
 
-		 edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
-		 
+		 edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],			 
+
 		 async delete(target, room, user) {
 			 const isManagerUser = await isManager(user.id);
 			 if (!isManagerUser) this.checkCan('roomowner');
 			 if (!target) return this.parse('/help psgo delete');
-            
-
-			 const card = await getCardFromInput(target);
-			 if (card) {
+    
+			 const result = await getCardFromInput(target);
+			 if (result) {
+				 if (Array.isArray(result)) {
+					 let output = 'Multiple cards found. Please specify using full ID (setId-cardNumber):\n';
+					 for (const c of result) {
+						 output += `${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})\n`;
+					 }
+					 return this.sendReply(output);
+				 }
+				 const card = result;
 				 const allCards = await getAllCards();
 				 delete allCards[card.id];
 				 await saveAllCards(allCards);
 				 this.modlog('PSGO DELETE CARD', null, card.id);
 				 return this.sendReply(`Deleted card: ${card.name}`);
 			 }
-            
+    
 			 const packCode = toID(target);
 			 const allPacks = await getAllPacks();
 			 if (allPacks[packCode]) {
@@ -880,12 +926,12 @@ export const commands: Chat.Commands = {
 				 this.modlog('PSGO DELETE PACK', null, packCode);
 				 return this.sendReply(`Deleted pack: ${packName}`);
 			 }
-            
+    
 			 return this.errorReply('Card or pack not found.');
 		 },
 		 
 		 deletehelp: ['/psgo delete [id] - Delete card or pack'],
-
+		 
         async manage(target, room, user) {
             if (!target) return this.parse('/help psgo manage');
             const [action, targetName, amountStr] = target.split(',').map(x => x.trim());
