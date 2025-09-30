@@ -1,6 +1,6 @@
 /***************************************
 * Pokemon Showdown Shop System         *
-* Credits: Prince Sky, Turbo Rx       *
+* Credits: Prince Sky, TurboRx       *
 ***************************************/
 
 import { FS } from '../../lib/fs';
