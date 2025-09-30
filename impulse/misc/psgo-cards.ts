@@ -1,7 +1,7 @@
 /**
  * Pokemon Showdown
  * PSGO Collectable Pokemon Cards System
- * Refector By ClarkJ338
+ * Refactor By ClarkJ338 - Cache-Free Version
  * @license MIT
  */
 
@@ -52,38 +52,35 @@ const userSettings = DB.userSettings;
 const cardDefinitions = DB.cardDefinitions;
 const packDefinitions = DB.packDefinitions;
 
-// ================ Load Initial Data ================
-let cardDefsCache: Record<string, Card> = {};
-let packDefsCache: Record<string, PackDefinition> = {};
-let cardNameToId: Record<string, string> = {};
-
-async function loadDefinitions() {
+// ================ Database Helper Functions ================
+async function getAllCards(): Promise<Record<string, Card>> {
     const cards = await cardDefinitions.get();
+    return (cards as any) || {};
+}
+
+function getAllCardsSync(): Record<string, Card> {
+    const cards = cardDefinitions.getSync();
+    return (cards as any) || {};
+}
+
+async function getAllPacks(): Promise<Record<string, PackDefinition>> {
     const packs = await packDefinitions.get();
-    
-    cardDefsCache = (cards as any) || {};
-    packDefsCache = (packs as any) || {};
-    
-    rebuildCardNameToId();
+    return (packs as any) || {};
 }
 
-function rebuildCardNameToId() {
-    cardNameToId = {};
-    for (const cardId in cardDefsCache) {
-        const card = cardDefsCache[cardId];
-        cardNameToId[card.nameId] = cardId;
-    }
+function getAllPacksSync(): Record<string, PackDefinition> {
+    const packs = packDefinitions.getSync();
+    return (packs as any) || {};
 }
 
-// Initialize on load
-loadDefinitions().catch(e => console.error('Error loading PSGO definitions:', e));
-
-async function saveCardDefinitions(): Promise<void> {
-    await cardDefinitions.insert(cardDefsCache);
+async function saveAllCards(cards: Record<string, Card>): Promise<void> {
+    await cardDefinitions.clear(true); // Clear as object
+    await cardDefinitions.insert(cards);
 }
 
-async function savePackDefinitions(): Promise<void> {
-    await packDefinitions.insert(packDefsCache);
+async function saveAllPacks(packs: Record<string, PackDefinition>): Promise<void> {
+    await packDefinitions.clear(true); // Clear as object
+    await packDefinitions.insert(packs);
 }
 
 // ================ Constants ================
@@ -117,24 +114,57 @@ function makeCardNameId(setId: string, cardName: string): string {
     return `${setId}-${toID(cardName)}`;
 }
 
-function getCardById(cardId: string): Card | null {
-    return cardDefsCache[cardId] || null;
+async function getCardById(cardId: string): Promise<Card | null> {
+    const allCards = await getAllCards();
+    return allCards[cardId] || null;
 }
 
-function getCardByNameId(nameId: string): Card | null {
-    const cardId = cardNameToId[nameId];
-    return cardId ? getCardById(cardId) : null;
+function getCardByIdSync(cardId: string): Card | null {
+    const allCards = getAllCardsSync();
+    return allCards[cardId] || null;
 }
 
-function getCardFromInput(input: string): Card | null {
+async function getCardByNameId(nameId: string): Promise<Card | null> {
+    const allCards = await getAllCards();
+    // Build nameId lookup on the fly
+    for (const cardId in allCards) {
+        if (allCards[cardId].nameId === nameId) {
+            return allCards[cardId];
+        }
+    }
+    return null;
+}
+
+function getCardByNameIdSync(nameId: string): Card | null {
+    const allCards = getAllCardsSync();
+    // Build nameId lookup on the fly
+    for (const cardId in allCards) {
+        if (allCards[cardId].nameId === nameId) {
+            return allCards[cardId];
+        }
+    }
+    return null;
+}
+
+async function getCardFromInput(input: string): Promise<Card | null> {
     if (!input || !input.includes('-')) return null;
-    return getCardById(input) || getCardByNameId(input);
+    const byId = await getCardById(input);
+    if (byId) return byId;
+    return await getCardByNameId(input);
 }
 
-function toPackCode(packInput: string): string {
+function getCardFromInputSync(input: string): Card | null {
+    if (!input || !input.includes('-')) return null;
+    const byId = getCardByIdSync(input);
+    if (byId) return byId;
+    return getCardByNameIdSync(input);
+}
+
+async function toPackCode(packInput: string): Promise<string> {
     const packId = toID(packInput);
-    for (const code in packDefsCache) {
-        if (toID(code) === packId || toID(packDefsCache[code].name) === packId) {
+    const allPacks = await getAllPacks();
+    for (const code in allPacks) {
+        if (toID(code) === packId || toID(allPacks[code].name) === packId) {
             return code;
         }
     }
@@ -181,9 +211,10 @@ function formatCardTypes(types: string): string {
     return `${baseTypes} - <span style="font-weight: bold;">${subtype}</span>`;
 }
 
-function makePack(setId: string): CardInstance[] {
+async function makePack(setId: string): Promise<CardInstance[]> {
     const out: CardInstance[] = [];
-    const packCards = Object.values(cardDefsCache).filter(c => c.setId === setId);
+    const allCards = await getAllCards();
+    const packCards = Object.values(allCards).filter(c => c.setId === setId);
     if (!packCards.length) return out;
     for (let i = 0; i < CARDS_PER_PACK; i++) {
         const randomCard = packCards[Math.floor(Math.random() * packCards.length)];
@@ -199,9 +230,10 @@ async function getUserCards(userid: string): Promise<CardInstance[]> {
 }
 
 async function giveCard(userid: string, cardId: string): Promise<boolean> {
-    if (!cardDefsCache[cardId]) return false;
-    const card: CardInstance = { ...cardDefsCache[cardId], obtainedAt: Date.now() };
-    await userCards.pushIn(userid, card);
+    const card = await getCardById(cardId);
+    if (!card) return false;
+    const cardInstance: CardInstance = { ...card, obtainedAt: Date.now() };
+    await userCards.pushIn(userid, cardInstance);
     return true;
 }
 
@@ -283,10 +315,10 @@ function displayCard(card: Card): string {
 // ================ COMMANDS ================
 export const commands: Chat.Commands = {
     psgo: {
-        show(target, room, user) {
+        async show(target, room, user) {
             if (!this.runBroadcast()) return;
             if (!target) return this.parse('/help psgo show');
-            const card = getCardFromInput(target);
+            const card = await getCardFromInput(target);
             if (!card) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
             return this.sendReplyBox(displayCard(card));
         },
@@ -321,7 +353,7 @@ export const commands: Chat.Commands = {
                 return this.errorReply(`${targetUser.name} has disabled card transfers.`);
             }
 
-            const card = getCardFromInput(cardInput);
+            const card = await getCardFromInput(cardInput);
             if (!card) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
             
             const isAdminOrManager = await isManager(user.id) || this.can('globalban', null, room);
@@ -463,9 +495,10 @@ export const commands: Chat.Commands = {
         },
         ladderhelp: ['/psgo ladder - View points leaderboard'],
 
-        shop(target, room, user) {
+        async shop(target, room, user) {
             if (!this.runBroadcast()) return;
-            const shopPacks = Object.values(packDefsCache).filter(p => p.inShop);
+            const allPacks = await getAllPacks();
+            const shopPacks = Object.values(allPacks).filter(p => p.inShop);
             if (!shopPacks.length) return this.sendReplyBox('The pack shop is currently empty.');
 
             const packsHTML = shopPacks.map(pack =>
@@ -485,8 +518,9 @@ export const commands: Chat.Commands = {
 
         async buy(target, room, user) {
             if (!target) return this.parse('/help psgo buy');
-            const packCode = toPackCode(target);
-            const pack = packDefsCache[packCode];
+            const packCode = await toPackCode(target);
+            const allPacks = await getAllPacks();
+            const pack = allPacks[packCode];
             if (!pack) return this.errorReply('Pack not found.');
             if (!pack.inShop && !pack.creditPack) return this.errorReply('Pack not available.');
 
@@ -519,21 +553,22 @@ export const commands: Chat.Commands = {
         async open(target, room, user) {
             if (!this.runBroadcast()) return;
             if (!target) return this.parse('/help psgo open');
-            const packCode = toPackCode(target);
+            const packCode = await toPackCode(target);
             const userPacksList = await getUserPacks(user.id);
             if (!userPacksList.includes(packCode)) {
                 return this.errorReply(`You don't have a ${packCode} pack.`);
             }
 
             await removeUserPack(user.id, packCode);
-            const cards = makePack(packCode);
+            const cards = await makePack(packCode);
             if (!cards.length) return this.errorReply(`No cards available for pack ${packCode}.`);
 
             const currentCards = await getUserCards(user.id);
             const updatedCards = [...currentCards, ...cards];
             await userCards.setIn(user.id, updatedCards);
 
-            const packInfo = packDefsCache[packCode];
+            const allPacks = await getAllPacks();
+            const packInfo = allPacks[packCode];
             const packName = packInfo ? packInfo.name : packCode;
             const cardsHTML = cards.map(card =>
                 `<button class="button" name="send" value="/psgo show ${card.id}" style="margin: 2px;">` +
@@ -554,8 +589,9 @@ export const commands: Chat.Commands = {
             const packCounts: Record<string, number> = {};
             for (const pack of userPacksList) packCounts[pack] = (packCounts[pack] || 0) + 1;
 
+            const allPacks = await getAllPacks();
             const packsHTML = Object.entries(packCounts).map(([code, count]) => {
-                const pack = packDefsCache[code];
+                const pack = allPacks[code];
                 const packName = pack ? pack.name : code;
                 return `<div style="margin: 5px 0;">` +
                     `<button class="button" name="send" value="/psgo open ${code}">Open ${packName}</button> (${count} remaining)` +
@@ -570,121 +606,135 @@ export const commands: Chat.Commands = {
         },
         packshelp: ['/psgo packs - View your unopened packs'],
 
-		 async add(target, room, user) {
-			 const isManagerUser = await isManager(user.id);
-			 if (!isManagerUser) this.checkCan('roomowner');
-			 if (!target) return this.parse('/help psgo add');
+        async add(target, room, user) {
+            const isManagerUser = await isManager(user.id);
+            if (!isManagerUser) this.checkCan('roomowner');
+            if (!target) return this.parse('/help psgo add');
 
-			 const parts = target.split(',').map(x => x.trim());
+            const parts = target.split(',').map(x => x.trim());
     
-			 if (parts.length === 7) {
-				 const [setId, cardNumber, name, image, rarity, set, types] = parts;
-				 const cardId = makeCardId(setId, cardNumber);
-				 const nameId = makeCardNameId(setId, name);
+            if (parts.length === 7) {
+                const [setId, cardNumber, name, image, rarity, set, types] = parts;
+                const cardId = makeCardId(setId, cardNumber);
+                const nameId = makeCardNameId(setId, name);
         
-				 if (cardDefsCache[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
-				 if (cardNameToId[nameId]) return this.errorReply(`Card name ${name} exists in set ${setId}.`);
+                const allCards = await getAllCards();
+                
+                if (allCards[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
+                
+                // Check if nameId exists
+                for (const existingCardId in allCards) {
+                    if (allCards[existingCardId].nameId === nameId) {
+                        return this.errorReply(`Card name ${name} exists in set ${setId}.`);
+                    }
+                }
         
-				 cardDefsCache[cardId] = { id: cardId, name, nameId, image, rarity, set, setId, cardNumber, types };
-				 cardNameToId[nameId] = cardId;
-				 await saveCardDefinitions();
-				 this.modlog('PSGO ADD CARD', null, cardId);
-				 return this.sendReply(`Added card: ${name} (${cardId})`);
+                allCards[cardId] = { id: cardId, name, nameId, image, rarity, set, setId, cardNumber, types };
+                await saveAllCards(allCards);
+                this.modlog('PSGO ADD CARD', null, cardId);
+                return this.sendReply(`Added card: ${name} (${cardId})`);
         
-			 } else if (parts.length === 6) {
-				 const [code, name, series, releaseDate, priceStr, flags] = parts;
-				 const packCode = toID(code);
-				 if (packDefsCache[packCode]) return this.errorReply(`Pack ${packCode} already exists!`);
+            } else if (parts.length === 6) {
+                const [code, name, series, releaseDate, priceStr, flags] = parts;
+                const packCode = toID(code);
+                const allPacks = await getAllPacks();
+                
+                if (allPacks[packCode]) return this.errorReply(`Pack ${packCode} already exists!`);
         
-				 const inShop = flags.includes('shop');
-				 const creditPack = flags.includes('credit');
+                const inShop = flags.includes('shop');
+                const creditPack = flags.includes('credit');
         
-				 packDefsCache[packCode] = {
-					 code: packCode, name, series, releaseDate,
-					 price: parseInt(priceStr) || 0, inShop, creditPack
-				 };
-				 await savePackDefinitions();
-				 this.modlog('PSGO ADD PACK', null, packCode);
-				 return this.sendReply(`Added pack: ${name} (${packCode})`);
-			 }
+                allPacks[packCode] = {
+                    code: packCode, name, series, releaseDate,
+                    price: parseInt(priceStr) || 0, inShop, creditPack
+                };
+                await saveAllPacks(allPacks);
+                this.modlog('PSGO ADD PACK', null, packCode);
+                return this.sendReply(`Added pack: ${name} (${packCode})`);
+            }
     
-			 return this.errorReply('Usage: /psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] OR /psgo add [code], [name], [series], [date], [price], [shop|credit]');
-		 },
-		 addhelp: [
-			 '/psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] - Add card',
-			 '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
-			 'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
-		 ],
-		 
-		 async edit(target, room, user) {
-			 const isManagerUser = await isManager(user.id);
-			 if (!isManagerUser) this.checkCan('roomowner');
-			 if (!target) return this.parse('/help psgo edit');
+            return this.errorReply('Usage: /psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] OR /psgo add [code], [name], [series], [date], [price], [shop|credit]');
+        },
+        addhelp: [
+            '/psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] - Add card',
+            '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
+            'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
+        ],
+        
+        async edit(target, room, user) {
+            const isManagerUser = await isManager(user.id);
+            if (!isManagerUser) this.checkCan('roomowner');
+            if (!target) return this.parse('/help psgo edit');
     
-			 const parts = target.split(',').map(x => x.trim());
-			 const id = parts[0];
+            const parts = target.split(',').map(x => x.trim());
+            const id = parts[0];
     
-			 // Try to edit as card first
-			 const card = getCardFromInput(id);
-			 if (card && parts.length === 7) {
-				 const [, name, image, rarity, set, types] = parts;
-				 const newNameId = makeCardNameId(card.setId, name);
+            // Try to edit as card first
+            const card = await getCardFromInput(id);
+            if (card && parts.length === 7) {
+                const [, name, image, rarity, set, types] = parts;
+                const newNameId = makeCardNameId(card.setId, name);
         
-				 if (newNameId !== card.nameId && cardNameToId[newNameId]) {
-					 return this.errorReply(`Card name ${name} exists in set ${card.setId}.`);
-				 }
+                const allCards = await getAllCards();
+                
+                // Check if new nameId conflicts with another card
+                if (newNameId !== card.nameId) {
+                    for (const existingCardId in allCards) {
+                        if (allCards[existingCardId].nameId === newNameId && existingCardId !== card.id) {
+                            return this.errorReply(`Card name ${name} exists in set ${card.setId}.`);
+                        }
+                    }
+                }
         
-				 if (newNameId !== card.nameId) {
-					 delete cardNameToId[card.nameId];
-					 cardNameToId[newNameId] = card.id;
-				 }
+                allCards[card.id] = {
+                    ...card, name, nameId: newNameId, image, rarity, set, types
+                };
+                await saveAllCards(allCards);
+                this.modlog('PSGO EDIT CARD', null, card.id);
+                return this.sendReply(`Edited card: ${name}`);
+            }
+            
+            // Try to edit as pack
+            const packCode = toID(id);
+            const allPacks = await getAllPacks();
+            const pack = allPacks[packCode];
+            if (pack && parts.length === 6) {
+                const [, name, series, releaseDate, priceStr, flags] = parts;
+                allPacks[packCode] = {
+                    ...pack, name, series, releaseDate,
+                    price: parseInt(priceStr) || 0,
+                    inShop: flags.includes('shop'),
+                    creditPack: flags.includes('credit')
+                };
+                await saveAllPacks(allPacks);
+                this.modlog('PSGO EDIT PACK', null, packCode);
+                return this.sendReply(`Edited pack: ${name}`);
+            }
+            return this.errorReply('ID not found or wrong parameter count.');
+        },
         
-				 cardDefsCache[card.id] = {
-					 ...card, name, nameId: newNameId, image, rarity, set, types
-				 };
-				 await saveCardDefinitions();
-				 this.modlog('PSGO EDIT CARD', null, card.id);
-				 return this.sendReply(`Edited card: ${name}`);
-			 }
-			 // Try to edit as pack
-			 const packCode = toID(id);
-			 const pack = packDefsCache[packCode];
-			 if (pack && parts.length === 6) {
-				 const [, name, series, releaseDate, priceStr, flags] = parts;
-				 packDefsCache[packCode] = {
-					 ...pack, name, series, releaseDate,
-					 price: parseInt(priceStr) || 0,
-					 inShop: flags.includes('shop'),
-					 creditPack: flags.includes('credit')
-				 };
-				 await savePackDefinitions();
-				 this.modlog('PSGO EDIT PACK', null, packCode);
-				 return this.sendReply(`Edited pack: ${name}`);
-			 }
-			 return this.errorReply('ID not found or wrong parameter count.');
-		 },
-		 
-		 edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
-		 
+        edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
+        
         async delete(target, room, user) {
             const isManagerUser = await isManager(user.id);
             if (!isManagerUser) this.checkCan('roomowner');
             if (!target) return this.parse('/help psgo delete');
             
-            const card = getCardFromInput(target);
+            const card = await getCardFromInput(target);
             if (card) {
-                delete cardNameToId[card.nameId];
-                delete cardDefsCache[card.id];
-                await saveCardDefinitions();
+                const allCards = await getAllCards();
+                delete allCards[card.id];
+                await saveAllCards(allCards);
                 this.modlog('PSGO DELETE CARD', null, card.id);
                 return this.sendReply(`Deleted card: ${card.name}`);
             }
             
             const packCode = toID(target);
-            if (packDefsCache[packCode]) {
-                const packName = packDefsCache[packCode].name;
-                delete packDefsCache[packCode];
-                await savePackDefinitions();
+            const allPacks = await getAllPacks();
+            if (allPacks[packCode]) {
+                const packName = allPacks[packCode].name;
+                delete allPacks[packCode];
+                await saveAllPacks(allPacks);
                 this.modlog('PSGO DELETE PACK', null, packCode);
                 return this.sendReply(`Deleted pack: ${packName}`);
             }
@@ -709,6 +759,7 @@ export const commands: Chat.Commands = {
                         return this.errorReply(`${addUser.name} is already a manager.`);
                     }
                     managerList.push(addUser.id);
+                    await managers.clear(true);
                     await managers.insert({ managers: managerList });
                     if (addUser.connected) addUser.popup(`You are now a PSGO manager!`);
                     this.modlog('PSGO MANAGER ADD', addUser);
@@ -722,6 +773,7 @@ export const commands: Chat.Commands = {
                     const idx = managerList2.indexOf(toID(targetName));
                     if (idx === -1) return this.errorReply(`${targetName} is not a manager.`);
                     managerList2.splice(idx, 1);
+                    await managers.clear(true);
                     await managers.insert({ managers: managerList2 });
                     const removeUser = Users.get(targetName);
                     if (removeUser?.connected) removeUser.popup(`Your PSGO manager privileges were removed.`);
@@ -755,7 +807,7 @@ export const commands: Chat.Commands = {
                     const isManagerUser2 = await isManager(user.id);
                     if (!isManagerUser2) this.checkCan('globalban');
                     const takeUser = Users.get(targetName) || { name: targetName, id: toID(targetName), connected: false } as any;
-                    const takeCardObj = getCardFromInput(amountStr || '');
+                    const takeCardObj = await getCardFromInput(amountStr || '');
                     if (!takeCardObj) return this.errorReply('Card not found.');
                     const success = await takeCard(takeUser.id, takeCardObj.id);
                     if (!success) return this.errorReply(`${takeUser.name} doesn't have that card.`);
