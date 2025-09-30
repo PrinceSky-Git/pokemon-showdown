@@ -778,59 +778,70 @@ export const commands: Chat.Commands = {
             '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
             'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
         ],
+
+		 async edit(target, room, user) {
+			 const isManagerUser = await isManager(user.id);
+			 if (!isManagerUser) this.checkCan('roomowner');
+			 if (!target) return this.parse('/help psgo edit');
+
+			 const parts = target.split(',').map(x => x.trim());
+			 const id = parts[0];
+
+			 // Try to edit as card first
+			 const card = await getCardFromInput(id);
+			 if (card && parts.length === 6) {
+				 const [, name, image, rarity, set, types] = parts;
+				 const newNameId = makeCardNameId(card.setId, name);
+
+				 const allCards = await getAllCards();
         
-        async edit(target, room, user) {
-            const isManagerUser = await isManager(user.id);
-            if (!isManagerUser) this.checkCan('roomowner');
-            if (!target) return this.parse('/help psgo edit');
+				 // Check if new nameId conflicts with another card
+				 if (newNameId !== card.nameId) {
+					 for (const existingCardId in allCards) {
+						 if (allCards[existingCardId].nameId === newNameId && existingCardId !== card.id) {
+							 return this.errorReply(`Card name ${name} exists in set ${card.setId}.`);
+						 }
+					 }
+				 }
+
+				 allCards[card.id] = {
+					 id: card.id,
+					 name,
+					 nameId: newNameId,
+					 image,
+					 rarity,
+					 set,
+					 setId: card.setId,
+					 cardNumber: card.cardNumber,
+					 types
+				 };
+				 await saveAllCards(allCards);
+				 this.modlog('PSGO EDIT CARD', null, card.id);
+				 return this.sendReply(`Edited card: ${name}`);
+			 }
     
-            const parts = target.split(',').map(x => x.trim());
-            const id = parts[0];
-    
-            // Try to edit as card first
-            const card = await getCardFromInput(id);
-            if (card && parts.length === 7) {
-                const [, name, image, rarity, set, types] = parts;
-                const newNameId = makeCardNameId(card.setId, name);
-        
-                const allCards = await getAllCards();
-                
-                // Check if new nameId conflicts with another card
-                if (newNameId !== card.nameId) {
-                    for (const existingCardId in allCards) {
-                        if (allCards[existingCardId].nameId === newNameId && existingCardId !== card.id) {
-                            return this.errorReply(`Card name ${name} exists in set ${card.setId}.`);
-                        }
-                    }
-                }
-        
-                allCards[card.id] = {
-                    ...card, name, nameId: newNameId, image, rarity, set, types
-                };
-                await saveAllCards(allCards);
-                this.modlog('PSGO EDIT CARD', null, card.id);
-                return this.sendReply(`Edited card: ${name}`);
-            }
-            
-            // Try to edit as pack
-            const packCode = toID(id);
-            const allPacks = await getAllPacks();
-            const pack = allPacks[packCode];
-            if (pack && parts.length === 6) {
-                const [, name, series, releaseDate, priceStr, flags] = parts;
-                allPacks[packCode] = {
-                    ...pack, name, series, releaseDate,
-                    price: parseInt(priceStr) || 0,
-                    inShop: flags.includes('shop'),
-                    creditPack: flags.includes('credit')
-                };
-                await saveAllPacks(allPacks);
-                this.modlog('PSGO EDIT PACK', null, packCode);
-                return this.sendReply(`Edited pack: ${name}`);
-            }
-            return this.errorReply('ID not found or wrong parameter count.');
-        },
-        
+			 // Try to edit as pack
+			 const packCode = toID(id);
+			 const allPacks = await getAllPacks();
+			 const pack = allPacks[packCode];
+			 if (pack && parts.length === 6) {
+				 const [, name, series, releaseDate, priceStr, flags] = parts;
+				 allPacks[packCode] = {
+					 code: packCode,
+					 name,
+					 series,
+					 releaseDate,
+					 price: parseInt(priceStr) || 0,
+					 inShop: flags.includes('shop'),
+					 creditPack: flags.includes('credit')
+				 };
+				 await saveAllPacks(allPacks);
+				 this.modlog('PSGO EDIT PACK', null, packCode);
+				 return this.sendReply(`Edited pack: ${name}`);
+			 }
+			 return this.errorReply('ID not found or wrong parameter count.');
+		 },
+		 
         edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
         
         async delete(target, room, user) {
