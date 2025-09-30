@@ -494,16 +494,18 @@ export const commands: Chat.Commands = {
             return this.sendReplyBox(tableHTML);
         },
         ladderhelp: ['/psgo ladder - View points leaderboard'],
-		 
+
 		 async cards(target, room, user) {
 			 if (!this.runBroadcast()) return;
+    
 			 const allCards = await getAllCards();
-			 const cardList = Object.values(allCards);
+			 // Filter out invalid cards
+			 const cardList = Object.values(allCards).filter(c => c.id && c.name && c.setId);
     
 			 if (!cardList.length) {
 				 return this.sendReplyBox('No cards in database.');
 			 }
-    
+			 
 			 // Parse filters
 			 const filters = target.split(',').map(x => x.trim().toLowerCase());
 			 let filteredCards = [...cardList];
@@ -567,6 +569,49 @@ export const commands: Chat.Commands = {
 		 },
 		 
 		 cardshelp: ['/psgo cards [filters] - List all cards in database. Filters: set:id, rarity:name, type:fire, or card name'],
+
+		 async cleanup(target, room, user) {
+			 const isManagerUser = await isManager(user.id);
+			 if (!isManagerUser) this.checkCan('roomowner');
+    
+			 const allCards = await getAllCards();
+			 const allPacks = await getAllPacks();
+    
+			 let removedCards = 0;
+			 let removedPacks = 0;
+    
+			 // Remove invalid cards
+			 for (const cardId in allCards) {
+				 const card = allCards[cardId];
+				 if (!card.id || !card.name || !card.setId || card.id === 'undefined') {
+					 delete allCards[cardId];
+					 removedCards++;
+					 this.sendReply(`Removed invalid card: ${cardId}`);
+				 }
+			 }
+    
+			 // Remove invalid packs
+			 for (const packCode in allPacks) {
+				 const pack = allPacks[packCode];
+				 if (!pack.code || !pack.name || pack.code === 'undefined') {
+					 delete allPacks[packCode];
+					 removedPacks++;
+					 this.sendReply(`Removed invalid pack: ${packCode}`);
+				 }
+			 }
+    
+			 if (removedCards > 0) await saveAllCards(allCards);
+			 if (removedPacks > 0) await saveAllPacks(allPacks);
+    
+			 if (removedCards === 0 && removedPacks === 0) {
+				 return this.sendReply('No invalid entries found.');
+			 }
+			 
+			 this.modlog('PSGO CLEANUP', null, `${removedCards} cards, ${removedPacks} packs`);
+			 return this.sendReply(`Cleanup complete! Removed ${removedCards} invalid cards and ${removedPacks} invalid packs.`);
+		 },
+		 
+		 cleanuphelp: ['/psgo cleanup - Remove invalid/corrupted cards and packs from database (requires manager or #)'],
 
         async shop(target, room, user) {
             if (!this.runBroadcast()) return;
