@@ -376,12 +376,6 @@ export const commands: Chat.Commands = {
 			 const targetUser = Users.get(targetName);
 			 if (!targetUser) return this.errorReply(`User "${targetName}" not found.`);
 			 if (!targetUser.named) return this.errorReply('Guests cannot receive cards.');
-			 if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
-
-			 const settings = await userSettings.getIn(targetUser.id);
-			 if (settings?.transfersEnabled === false) {
-				 return this.errorReply(`${targetUser.name} has disabled card transfers.`);
-			 }
 
 			 const result = await getCardFromInput(cardInput);
 			 if (!result) return this.errorReply('Card not found. Use format: setId-cardNumber or setId-cardName');
@@ -396,9 +390,11 @@ export const commands: Chat.Commands = {
 				 output += '</div>';
 				 return this.sendReplyBox(output);
 			 }
+
 			 const card = result;
     
-			 const isAdminOrManager = await isManager(user.id) || this.checkCan('roomowner');
+			 // Check admin/manager status FIRST
+			 const isAdminOrManager = await isManager(user.id) || this.checkCan('bypassall');
     
 			 if (isAdminOrManager) {
 				 await giveCard(targetUser.id, card.id);
@@ -407,6 +403,14 @@ export const commands: Chat.Commands = {
 				 }
 				 this.modlog('PSGO GIVE', targetUser, `card: ${card.id}`);
 				 return this.sendReply(`Gave ${card.name} to ${targetUser.name}.`);
+			 }
+
+			 // Regular user checks
+			 if (targetUser.id === user.id) return this.errorReply('You cannot transfer cards to yourself.');
+
+			 const settings = await userSettings.getIn(targetUser.id);
+			 if (settings?.transfersEnabled === false) {
+				 return this.errorReply(`${targetUser.name} has disabled card transfers.`);
 			 }
 
 			 const userHasCard = await hasCard(user.id, card.id);
@@ -981,7 +985,7 @@ export const commands: Chat.Commands = {
                 case 'credits':
                 case 'addcredits':
                     const isManagerUser = await isManager(user.id);
-                    if (!isManagerUser) this.checkCan('globalban');
+                    if (!isManagerUser) this.checkCan('bypassall');
                     const credUser = Users.get(targetName);
                     if (!credUser) return this.errorReply(`User "${targetName}" not found.`);
                     const amount = parseInt(amountStr);
@@ -990,27 +994,36 @@ export const commands: Chat.Commands = {
                     if (credUser.connected) credUser.popup(`You received ${amount} pack credits!`);
                     this.modlog('PSGO CREDITS GIVE', credUser, `${amount} credits`);
                     return this.sendReply(`Gave ${amount} credits to ${credUser.name}.`);
-                    
-                case 'take':
-                case 'takecard':
-                    const isManagerUser2 = await isManager(user.id);
-                    if (!isManagerUser2) this.checkCan('globalban');
-                    const takeUser = Users.get(targetName) || { name: targetName, id: toID(targetName), connected: false } as any;
-                    const takeCardObj = await getCardFromInput(amountStr || '');
-                    if (!takeCardObj) return this.errorReply('Card not found.');
-                    const success = await takeCard(takeUser.id, takeCardObj.id);
-                    if (!success) return this.errorReply(`${takeUser.name} doesn't have that card.`);
-                    if (takeUser.connected) takeUser.popup(`Your ${takeCardObj.name} was taken by an admin.`);
-                    this.modlog('PSGO TAKE', takeUser as any, `card: ${takeCardObj.id}`);
-                    return this.sendReply(`Took ${takeCardObj.name} from ${takeUser.name}.`);
-                    
-                default:
-                    return this.errorReply('Usage: /psgo manage [add|remove|list|credits|take], [user], [amount/card]');
-            }
-        },
+					
+					case 'take':
+					case 'takecard':
+						const isManagerUser2 = await isManager(user.id);
+						if (!isManagerUser2) this.checkCan('bypassall');
+						const takeUser = Users.get(targetName) || { name: targetName, id: toID(targetName), connected: false } as any;
+						const result = await getCardFromInput(amountStr || '');
+						if (!result) return this.errorReply('Card not found.');
+            
+						if (Array.isArray(result)) {
+							let output = 'Multiple cards found. Please specify using full ID (setId-cardNumber):\n';
+							for (const c of result) {
+								output += `${c.name} - ${c.set} #${c.cardNumber} (ID: ${c.id})\n`;
+							}
+							return this.sendReply(output);
+						}
+            
+						const takeCardObj = result;
+						const success = await takeCard(takeUser.id, takeCardObj.id);
+						if (!success) return this.errorReply(`${takeUser.name} doesn't have that card.`);
+						if (takeUser.connected) takeUser.popup(`Your ${takeCardObj.name} was taken by an admin.`);
+						this.modlog('PSGO TAKE', takeUser as any, `card: ${takeCardObj.id}`);
+						return this.sendReply(`Took ${takeCardObj.name} from ${takeUser.name}.`);
+					default:
+						return this.errorReply('Usage: /psgo manage [add|remove|list|credits|take], [user], [amount/card]');
+				}
+		 },
         managehelp: [
-            '/psgo manage add, [user] - Add manager (requires #)',
-            '/psgo manage remove, [user] - Remove manager (requires #)', 
+            '/psgo manage add, [user] - Add manager (requires ~, &)',
+            '/psgo manage remove, [user] - Remove manager (requires ~, &)', 
             '/psgo manage list - List managers',
             '/psgo manage credits, [user], [amount] - Give credits (requires manager)',
             '/psgo manage take, [user], [card] - Take card (requires manager)'
