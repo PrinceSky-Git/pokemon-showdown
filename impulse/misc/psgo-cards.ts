@@ -98,7 +98,7 @@ const userPacks = DB.userPacks;
 const packCredits = DB.packCredits;
 const managers = DB.managers;
 const userSettings = DB.userSettings;
-const cardDefinitions = DB.cardDefinitions;
+const cardDefinitions = DB.cached.cardDefinitions;
 const packDefinitions = DB.packDefinitions;
 
 // ================ Database Helper Functions ================
