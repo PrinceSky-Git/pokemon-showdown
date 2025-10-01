@@ -8,7 +8,7 @@ import { FS } from '../../lib';
 import { MongoDB } from '../../impulse/mongodb_module';
 
 // Change this to match your server's userlist color.
-const backgroundColor = 'rgba(255, 255, 255, 0.95);';
+const backgroundColor = 'rgba(255, 255, 255, 0.95)';
 const STAFF_ROOM_ID = 'staff';
 const DEFAULT_ICON_SIZE = 30;
 
