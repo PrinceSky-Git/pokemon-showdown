@@ -1,1160 +1,942 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as _ from 'lodash';
+/*
+* PokemonShowdown JasonDB
+* Proxy DB built around fs and lodash with concurrent write safety
+* @author ClarkJ338
+* @license MIT
+*/
 
-interface CacheOptions {
-  maxSize: number;        // Max memory size in bytes (default: 50MB)
-  maxEntries: number;     // Max number of cached collections (default: 100)
-  ttl?: number;          // Time to live in milliseconds (optional)
-  enableStats: boolean;  // Enable access statistics (default: true)
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import _ from "lodash";
+
+type CollectionData<T> = T[] | Record<string, any>;
+
+interface PendingOperation {
+  resolve: (value: any) => void;
+  reject: (error: any) => void;
+  operation: () => Promise<any>;
 }
 
-interface CacheStats {
-  hits: number;
-  misses: number;
-  hitRatio: number;
-  memoryUsage: number;
-  totalEntries: number;
-  evictions: number;
-  accessPatterns: Map<string, number>;
-}
+export class JsonDB {
+  private basePath: string;
+  private locks: Map<string, Promise<any>> = new Map();
+  private queues: Map<string, PendingOperation[]> = new Map();
 
-interface LazyCacheEntry<T = any> {
-  data: T;
-  lastAccessed: number;
-  accessCount: number;
-  size: number;
-  createdAt: number;
-  expiresAt?: number;
-}
-
-class LazyCache {
-  private cache = new Map<string, LazyCacheEntry>();
-  private options: CacheOptions;
-  private stats: CacheStats;
-  private totalMemoryUsage = 0;
-  private accessOrder: string[] = [];
-
-  constructor(options: Partial<CacheOptions> = {}) {
-    this.options = {
-      maxSize: 50 * 1024 * 1024, // 50MB
-      maxEntries: 100,
-      enableStats: true,
-      ...options
-    };
-
-    this.stats = {
-      hits: 0,
-      misses: 0,
-      hitRatio: 0,
-      memoryUsage: 0,
-      totalEntries: 0,
-      evictions: 0,
-      accessPatterns: new Map()
-    };
-  }
-
-  private calculateSize(data: any): number {
-    return JSON.stringify(data).length * 2; // Rough estimate (2 bytes per char)
-  }
-
-  private updateAccessOrder(key: string): void {
-    const index = this.accessOrder.indexOf(key);
-    if (index > -1) {
-      this.accessOrder.splice(index, 1);
+  constructor(basePath: string = "./db") {
+    this.basePath = basePath;
+    if (!fs.existsSync(basePath)) {
+      fs.mkdirSync(basePath, { recursive: true });
     }
-    this.accessOrder.push(key);
-  }
 
-  private evictLRU(): void {
-    while (this.accessOrder.length > 0 && 
-           (this.totalMemoryUsage > this.options.maxSize || 
-            this.cache.size >= this.options.maxEntries)) {
-      const oldestKey = this.accessOrder.shift();
-      if (oldestKey && this.cache.has(oldestKey)) {
-        const entry = this.cache.get(oldestKey)!;
-        this.totalMemoryUsage -= entry.size;
-        this.cache.delete(oldestKey);
-        if (this.options.enableStats) {
-          this.stats.evictions++;
+    return new Proxy(this, {
+      get: (target, prop: string) => {
+        if (prop in target) return (target as any)[prop];
+        if (typeof prop === "string") {
+          return target._makeCollection<any>(prop);
         }
-      }
+      },
+    });
+  }
+
+  private _getFilePath(collection: string): string {
+    return path.join(this.basePath, `${collection}.json`);
+  }
+
+  private async _ensureCollectionFile(collection: string) {
+    const filePath = this._getFilePath(collection);
+    try {
+      await fsp.access(filePath);
+    } catch {
+      await fsp.writeFile(filePath, "null", "utf-8");
     }
   }
 
-  private isExpired(entry: LazyCacheEntry): boolean {
-    return entry.expiresAt ? Date.now() > entry.expiresAt : false;
+  private _ensureCollectionFileSync(collection: string) {
+    const filePath = this._getFilePath(collection);
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, "null", "utf-8");
+    }
   }
 
-  private updateStats(key: string, hit: boolean): void {
-    if (!this.options.enableStats) return;
+  private async _load<T>(collection: string): Promise<CollectionData<T>> {
+    await this._ensureCollectionFile(collection);
+    const raw = await fsp.readFile(this._getFilePath(collection), "utf-8");
+    return raw && raw !== "null" ? JSON.parse(raw) : null;
+  }
 
-    if (hit) {
-      this.stats.hits++;
-    } else {
-      this.stats.misses++;
+  private _loadSync<T>(collection: string): CollectionData<T> {
+    this._ensureCollectionFileSync(collection);
+    const raw = fs.readFileSync(this._getFilePath(collection), "utf-8");
+    return raw && raw !== "null" ? JSON.parse(raw) : null;
+  }
+
+  private async _save<T>(collection: string, data: CollectionData<T>) {
+    await fsp.writeFile(
+      this._getFilePath(collection),
+      JSON.stringify(data, null, 2),
+      "utf-8"
+    );
+  }
+
+  private _saveSync<T>(collection: string, data: CollectionData<T>) {
+    fs.writeFileSync(
+      this._getFilePath(collection),
+      JSON.stringify(data, null, 2),
+      "utf-8"
+    );
+  }
+
+  /**
+   * Executes an operation with file locking to prevent concurrent writes
+   */
+  private async _withLock<T>(collection: string, operation: () => Promise<T>): Promise<T> {
+    const lockKey = collection;
+    
+    // If there's already a lock, queue this operation
+    if (this.locks.has(lockKey)) {
+      return new Promise<T>((resolve, reject) => {
+        if (!this.queues.has(lockKey)) {
+          this.queues.set(lockKey, []);
+        }
+        this.queues.get(lockKey)!.push({
+          resolve,
+          reject,
+          operation: operation as () => Promise<any>
+        });
+      });
     }
 
-    this.stats.hitRatio = this.stats.hits / (this.stats.hits + this.stats.misses);
-    this.stats.memoryUsage = this.totalMemoryUsage;
-    this.stats.totalEntries = this.cache.size;
+    // Create the lock
+    const lockPromise = this._executeLocked(lockKey, operation);
+    this.locks.set(lockKey, lockPromise);
 
-    const currentCount = this.stats.accessPatterns.get(key) || 0;
-    this.stats.accessPatterns.set(key, currentCount + 1);
+    try {
+      const result = await lockPromise;
+      return result;
+    } finally {
+      // Process queued operations
+      await this._processQueue(lockKey);
+    }
   }
 
-  has(key: string): boolean {
-    const entry = this.cache.get(key);
-    if (!entry || this.isExpired(entry)) {
-      if (entry) {
-        this.cache.delete(key);
-        this.totalMemoryUsage -= entry.size;
+  private async _executeLocked<T>(lockKey: string, operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } finally {
+      // Always remove the lock when done
+      this.locks.delete(lockKey);
+    }
+  }
+
+  private async _processQueue(lockKey: string): Promise<void> {
+    const queue = this.queues.get(lockKey);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+
+    // Take the next operation from the queue
+    const next = queue.shift()!;
+    
+    // If queue is empty, remove it
+    if (queue.length === 0) {
+      this.queues.delete(lockKey);
+    }
+
+    // Execute the next operation with a new lock
+    const lockPromise = this._executeLocked(lockKey, next.operation);
+    this.locks.set(lockKey, lockPromise);
+
+    try {
+      const result = await lockPromise;
+      next.resolve(result);
+    } catch (error) {
+      next.reject(error);
+    } finally {
+      // Continue processing the queue
+      await this._processQueue(lockKey);
+    }
+  }
+
+  // -------- Global Utility --------
+  public async deleteAll(): Promise<boolean> {
+    // Lock all collections by using a special global lock
+    return this._withLock("__global__", async () => {
+      const files = await fsp.readdir(this.basePath);
+      const jsonFiles = files.filter(f => f.endsWith(".json"));
+      for (const file of jsonFiles) {
+        await fsp.unlink(path.join(this.basePath, file)).catch(() => {});
       }
-      return false;
+      return true;
+    });
+  }
+
+  public deleteAllSync(): boolean {
+    const files = fs.readdirSync(this.basePath);
+    const jsonFiles = files.filter(f => f.endsWith(".json"));
+    for (const file of jsonFiles) {
+      try {
+        fs.unlinkSync(path.join(this.basePath, file));
+      } catch {}
     }
     return true;
   }
 
-  get<T = any>(key: string): T | null {
-    const entry = this.cache.get(key);
-    
-    if (!entry || this.isExpired(entry)) {
-      if (entry) {
-        this.cache.delete(key);
-        this.totalMemoryUsage -= entry.size;
-      }
-      this.updateStats(key, false);
-      return null;
-    }
-
-    // Update access information
-    entry.lastAccessed = Date.now();
-    entry.accessCount++;
-    this.updateAccessOrder(key);
-    this.updateStats(key, true);
-
-    return entry.data;
-  }
-
-  set<T = any>(key: string, data: T): void {
-    // Remove existing entry if present
-    if (this.cache.has(key)) {
-      const oldEntry = this.cache.get(key)!;
-      this.totalMemoryUsage -= oldEntry.size;
-    }
-
-    const size = this.calculateSize(data);
-    const now = Date.now();
-    const entry: LazyCacheEntry<T> = {
-      data,
-      lastAccessed: now,
-      accessCount: 1,
-      size,
-      createdAt: now,
-      expiresAt: this.options.ttl ? now + this.options.ttl : undefined
-    };
-
-    this.cache.set(key, entry);
-    this.totalMemoryUsage += size;
-    this.updateAccessOrder(key);
-
-    // Evict if necessary
-    this.evictLRU();
-  }
-
-  delete(key: string): boolean {
-    const entry = this.cache.get(key);
-    if (entry) {
-      this.totalMemoryUsage -= entry.size;
-      const index = this.accessOrder.indexOf(key);
-      if (index > -1) {
-        this.accessOrder.splice(index, 1);
-      }
-      return this.cache.delete(key);
-    }
-    return false;
-  }
-
-  clear(): void {
-    this.cache.clear();
-    this.accessOrder = [];
-    this.totalMemoryUsage = 0;
-    if (this.options.enableStats) {
-      this.stats = {
-        hits: 0,
-        misses: 0,
-        hitRatio: 0,
-        memoryUsage: 0,
-        totalEntries: 0,
-        evictions: 0,
-        accessPatterns: new Map()
-      };
-    }
-  }
-
-  getStats(): CacheStats {
-    return { ...this.stats };
-  }
-
-  getTopAccessed(limit = 10): Array<[string, number]> {
-    return Array.from(this.stats.accessPatterns.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit);
-  }
-
-  warmUp(keys: string[], loadFunction: (key: string) => Promise<any>): Promise<void[]> {
-    return Promise.all(keys.map(async (key) => {
-      if (!this.has(key)) {
-        try {
-          const data = await loadFunction(key);
-          this.set(key, data);
-        } catch (error) {
-          console.warn(`Failed to warm cache for key: ${key}`, error);
-        }
-      }
-    }));
-  }
-
-  smartWarm(loadFunction: (key: string) => Promise<any>, topN = 10): Promise<void[]> {
-    const topKeys = this.getTopAccessed(topN).map(([key]) => key);
-    return this.warmUp(topKeys, loadFunction);
-  }
-}
-
-class JsonDB {
-  private dbPath: string;
-  private locks = new Map<string, boolean>();
-  private queues = new Map<string, Array<() => void>>();
-  private lazyCache: LazyCache;
-  private _cached: any;
-  private lockTimeout = 30000; // 30 seconds timeout for sync locks
-  private lockRetryDelay = 10; // 10ms delay between lock attempts
-
-  constructor(dbPath = './database', cacheOptions?: Partial<CacheOptions>) {
-    this.dbPath = dbPath;
-    this.lazyCache = new LazyCache(cacheOptions);
-    
-    // Ensure database directory exists
-    if (!fs.existsSync(this.dbPath)) {
-      fs.mkdirSync(this.dbPath, { recursive: true });
-    }
-
-    // Create lazy cached proxy
-    this._cached = new Proxy({}, {
-      get: (target, prop: string) => {
-        return this.createLazyCachedCollection(prop);
-      }
-    });
-  }
-
-  private getLockFilePath(collectionName: string): string {
-    return path.join(this.dbPath, `.${collectionName}.lock`);
-  }
-
-  private createSyncLock(collectionName: string): boolean {
-    const lockFile = this.getLockFilePath(collectionName);
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < this.lockTimeout) {
-      try {
-        // Try to create lock file exclusively
-        fs.writeFileSync(lockFile, process.pid.toString(), { flag: 'wx' });
-        return true;
-      } catch (error: any) {
-        if (error.code === 'EEXIST') {
-          // Lock file exists, check if the process is still running
-          try {
-            const pidStr = fs.readFileSync(lockFile, 'utf8');
-            const pid = parseInt(pidStr);
-            
-            // Check if process is still running
-            try {
-              process.kill(pid, 0); // Signal 0 to check if process exists
-              // Process exists, wait and retry
-              this.sleep(this.lockRetryDelay);
-              continue;
-            } catch {
-              // Process doesn't exist, remove stale lock
-              fs.unlinkSync(lockFile);
-              continue;
-            }
-          } catch {
-            // Can't read lock file, try to remove and continue
-            try {
-              fs.unlinkSync(lockFile);
-            } catch {}
-            continue;
-          }
-        } else {
-          // Other error, wait and retry
-          this.sleep(this.lockRetryDelay);
-        }
-      }
-    }
-    
-    throw new Error(`Failed to acquire sync lock for collection: ${collectionName} after ${this.lockTimeout}ms`);
-  }
-
-  private releaseSyncLock(collectionName: string): void {
-    const lockFile = this.getLockFilePath(collectionName);
-    try {
-      fs.unlinkSync(lockFile);
-    } catch {
-      // Ignore errors when releasing lock
-    }
-  }
-
-  private sleep(ms: number): void {
-    const start = Date.now();
-    while (Date.now() - start < ms) {
-      // Busy wait for very short delays
-    }
-  }
-
-  private withSyncLock<T>(collectionName: string, operation: () => T): T {
-    const lockAcquired = this.createSyncLock(collectionName);
-    if (!lockAcquired) {
-      throw new Error(`Failed to acquire lock for collection: ${collectionName}`);
-    }
-    
-    try {
-      const result = operation();
-      
-      // Always refresh cache with latest disk data after sync operations
-      this.refreshCacheFromDisk(collectionName);
-      
-      return result;
-    } finally {
-      this.releaseSyncLock(collectionName);
-    }
-  }
-
-  private refreshCacheFromDisk(collectionName: string): void {
-    try {
-      const diskData = this.loadCollectionSync(collectionName);
-      this.lazyCache.set(collectionName, diskData);
-    } catch (error) {
-      // If we can't load from disk, remove from cache to force reload next time
-      this.lazyCache.delete(collectionName);
-    }
-  }
-
-  private createLazyCachedCollection(collectionName: string) {
+  // -------- Collection Factory --------
+  private _makeCollection<T extends { id?: number }>(name: string) {
     const self = this;
-    
-    return new Proxy({}, {
-      get(target, method: string) {
-        return function(...args: any[]) {
-          // For read operations, check cache first, then load if needed
-          if (['get', 'getSync', 'findOne', 'findOneSync', 'findById', 'findByIdSync', 
-               'exists', 'existsSync', 'has', 'hasSync', 'count', 'countSync',
-               'getIn', 'getInSync', 'keys', 'keysSync', 'values', 'valuesSync',
-               'first', 'firstSync', 'last', 'lastSync'].includes(method)) {
-            
-            let cachedData = self.lazyCache.get(collectionName);
-            
-            if (!cachedData) {
-              // Lazy load the collection
-              try {
-                cachedData = self.loadCollectionSync(collectionName);
-                self.lazyCache.set(collectionName, cachedData);
-              } catch (error) {
-                cachedData = Array.isArray(self.getCollectionType(collectionName)) ? [] : {};
-                self.lazyCache.set(collectionName, cachedData);
-              }
-            }
-
-            // Create a temporary collection object with cached data
-            const tempCollection = {
-              [collectionName]: cachedData
-            };
-
-            // Execute the method on cached data
-            const collection = self.createCollection(tempCollection, collectionName);
-            if (typeof collection[method] === 'function') {
-              return collection[method](...args);
-            }
-          } else {
-            // For write operations, always ensure we have latest data from disk first
-            try {
-              const diskData = self.loadCollectionSync(collectionName);
-              self.lazyCache.set(collectionName, diskData);
-            } catch (error) {
-              const emptyData = Array.isArray(self.getCollectionType(collectionName)) ? [] : {};
-              self.lazyCache.set(collectionName, emptyData);
-            }
-
-            const tempCollection = {
-              [collectionName]: self.lazyCache.get(collectionName)
-            };
-
-            const collection = self.createCollection(tempCollection, collectionName);
-            if (typeof collection[method] === 'function') {
-              return collection[method](...args);
-            }
-          }
-          
-          throw new Error(`Method ${method} not found`);
-        };
-      }
-    });
-  }
-
-  private getCollectionType(collectionName: string): any[] | object {
-    const filePath = path.join(this.dbPath, `${collectionName}.json`);
-    if (fs.existsSync(filePath)) {
-      try {
-        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        return content;
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private loadCollectionSync(collectionName: string): any {
-    const filePath = path.join(this.dbPath, `${collectionName}.json`);
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    }
-    return Array.isArray(this.getCollectionType(collectionName)) ? [] : {};
-  }
-
-  private async loadCollection(collectionName: string): Promise<any> {
-    return new Promise((resolve) => {
-      const filePath = path.join(this.dbPath, `${collectionName}.json`);
-      fs.readFile(filePath, 'utf8', (err, data) => {
-        if (err) {
-          resolve(Array.isArray(this.getCollectionType(collectionName)) ? [] : {});
-        } else {
-          try {
-            resolve(JSON.parse(data));
-          } catch {
-            resolve(Array.isArray(this.getCollectionType(collectionName)) ? [] : {});
-          }
-        }
-      });
-    });
-  }
-
-  private async withLock<T>(collectionName: string, operation: () => Promise<T>): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const execute = async () => {
-        try {
-          this.locks.set(collectionName, true);
-          
-          // Ensure we have latest data from disk before async operations
-          const diskData = await this.loadCollection(collectionName);
-          this.lazyCache.set(collectionName, diskData);
-          
-          const result = await operation();
-          
-          // Refresh cache with latest disk data after async operations
-          const updatedDiskData = await this.loadCollection(collectionName);
-          this.lazyCache.set(collectionName, updatedDiskData);
-          
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        } finally {
-          this.locks.delete(collectionName);
-          const queue = this.queues.get(collectionName);
-          if (queue && queue.length > 0) {
-            const next = queue.shift()!;
-            setImmediate(next);
-          } else {
-            this.queues.delete(collectionName);
-          }
-        }
-      };
-
-      if (this.locks.has(collectionName)) {
-        if (!this.queues.has(collectionName)) {
-          this.queues.set(collectionName, []);
-        }
-        this.queues.get(collectionName)!.push(execute);
-      } else {
-        execute();
-      }
-    });
-  }
-
-  private async saveCollection(collectionName: string, data: any): Promise<void> {
-    const filePath = path.join(this.dbPath, `${collectionName}.json`);
-    return new Promise((resolve, reject) => {
-      fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8', (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-  }
-
-  private saveCollectionSync(collectionName: string, data: any): void {
-    const filePath = path.join(this.dbPath, `${collectionName}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-  }
-
-  private createCollection(data: any, collectionName: string) {
-    const self = this;
-    const collection = data[collectionName] || (Array.isArray(this.getCollectionType(collectionName)) ? [] : {});
-    const isArray = Array.isArray(collection);
 
     return {
-      // Read operations (no locking needed for cached access)
-      async get(filter?: any): Promise<any[]> {
-        const cachedData = self.lazyCache.get(collectionName) || await self.loadCollection(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (!filter) return isArray ? cachedData : Object.values(cachedData);
-        if (isArray) {
-          return cachedData.filter((item: any) => self.matchesFilter(item, filter));
+      // ----- Retrieval (Read Operations - No Locking Needed) -----
+      get: async (query?: object | ((item: T) => boolean)): Promise<T[] | object> => {
+        const data = (await self._load<T>(name)) ?? [];
+        if (Array.isArray(data)) {
+          if (typeof query === "function") return data.filter(query);
+          return query ? _.filter(data, query) : data;
         }
-        return Object.values(cachedData).filter((item: any) => self.matchesFilter(item, filter));
+        return data;
       },
 
-      getSync(filter?: any): any[] {
-        const cachedData = self.lazyCache.get(collectionName) || self.loadCollectionSync(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (!filter) return isArray ? cachedData : Object.values(cachedData);
-        if (isArray) {
-          return cachedData.filter((item: any) => self.matchesFilter(item, filter));
+      getSync: (query?: object | ((item: T) => boolean)): T[] | object => {
+        const data = self._loadSync<T>(name) ?? [];
+        if (Array.isArray(data)) {
+          if (typeof query === "function") return data.filter(query);
+          return query ? _.filter(data, query) : data;
         }
-        return Object.values(cachedData).filter((item: any) => self.matchesFilter(item, filter));
+        return data;
       },
 
-      async findOne(filter: any): Promise<any> {
-        const items = await this.get(filter);
-        return items[0] || null;
+      findOne: async (query: object): Promise<T | null> => {
+        const data: any = await this.get(query);
+        return Array.isArray(data) && data.length ? data[0] : null;
       },
 
-      findOneSync(filter: any): any {
-        const items = this.getSync(filter);
-        return items[0] || null;
+      findOneSync: (query: object): T | null => {
+        const data: any = this.getSync(query);
+        return Array.isArray(data) && data.length ? data[0] : null;
       },
 
-      async findById(id: any): Promise<any> {
-        const cachedData = self.lazyCache.get(collectionName) || await self.loadCollection(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (isArray) {
-          return cachedData.find((item: any) => item.id === id) || null;
+      findById: async (id: number): Promise<T | null> => {
+        return await this.findOne({ id });
+      },
+
+      findByIdSync: (id: number): T | null => {
+        return this.findOneSync({ id });
+      },
+
+      exists: async (query: object): Promise<boolean> => {
+        const data: any = await this.get(query);
+        return Array.isArray(data) ? data.length > 0 : !!data;
+      },
+
+      existsSync: (query: object): boolean => {
+        const data: any = this.getSync(query);
+        return Array.isArray(data) ? data.length > 0 : !!data;
+      },
+
+      has: async (idOrKey: number | string): Promise<boolean> => {
+        const data: any = await self._load<T>(name);
+        if (!data) return false;
+
+        if (Array.isArray(data) && typeof idOrKey === "number") {
+          return _.some(data, { id: idOrKey });
         }
-        return cachedData[id] || null;
+        return _.has(data, idOrKey);
       },
 
-      findByIdSync(id: any): any {
-        const cachedData = self.lazyCache.get(collectionName) || self.loadCollectionSync(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (isArray) {
-          return cachedData.find((item: any) => item.id === id) || null;
+      hasSync: (idOrKey: number | string): boolean => {
+        const data: any = self._loadSync<T>(name);
+        if (!data) return false;
+
+        if (Array.isArray(data) && typeof idOrKey === "number") {
+          return _.some(data, { id: idOrKey });
         }
-        return cachedData[id] || null;
+        return _.has(data, idOrKey);
       },
 
-      async exists(filter: any): Promise<boolean> {
-        const item = await this.findOne(filter);
-        return item !== null;
+      count: async (query?: object): Promise<number> => {
+        const data: any = await this.get(query);
+        return Array.isArray(data) ? data.length : Object.keys(data).length;
       },
 
-      existsSync(filter: any): boolean {
-        const item = this.findOneSync(filter);
-        return item !== null;
+      countSync: (query?: object): number => {
+        const data: any = this.getSync(query);
+        return Array.isArray(data) ? data.length : Object.keys(data).length;
       },
 
-      async has(key: any): Promise<boolean> {
-        const cachedData = self.lazyCache.get(collectionName) || await self.loadCollection(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (isArray) {
-          return cachedData.some((item: any) => item.id === key);
-        }
-        return key in cachedData;
-      },
+      // ----- Modification (Write Operations with Locking) -----
+      insert: async (item: T | Record<string, any>, value?: any): Promise<any> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
 
-      hasSync(key: any): boolean {
-        const cachedData = self.lazyCache.get(collectionName) || self.loadCollectionSync(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (isArray) {
-          return cachedData.some((item: any) => item.id === key);
-        }
-        return key in cachedData;
-      },
-
-      async count(filter?: any): Promise<number> {
-        const items = await this.get(filter);
-        return items.length;
-      },
-
-      countSync(filter?: any): number {
-        const items = this.getSync(filter);
-        return items.length;
-      },
-
-      // Write operations (with proper locking)
-      async insert(data: any): Promise<any> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          
-          if (isArray) {
-            const newId = currentData.length > 0 ? Math.max(...currentData.map((item: any) => item.id || 0)) + 1 : 1;
-            const newItem = { id: newId, ...data };
-            currentData.push(newItem);
-            await self.saveCollection(collectionName, currentData);
-            return newItem;
-          } else {
-            const key = data.id || Object.keys(currentData).length + 1;
-            currentData[key] = data;
-            await self.saveCollection(collectionName, currentData);
-            return data;
-          }
-        });
-      },
-
-      insertSync(data: any): any {
-        return self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          
-          if (isArray) {
-            const newId = currentData.length > 0 ? Math.max(...currentData.map((item: any) => item.id || 0)) + 1 : 1;
-            const newItem = { id: newId, ...data };
-            currentData.push(newItem);
-            self.saveCollectionSync(collectionName, currentData);
-            return newItem;
-          } else {
-            const key = data.id || Object.keys(currentData).length + 1;
-            currentData[key] = data;
-            self.saveCollectionSync(collectionName, currentData);
-            return data;
-          }
-        });
-      },
-
-      async update(filter: any, updateData: any): Promise<any[]> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          const updatedItems: any[] = [];
-
-          if (isArray) {
-            for (let i = 0; i < currentData.length; i++) {
-              if (self.matchesFilter(currentData[i], filter)) {
-                currentData[i] = { ...currentData[i], ...updateData };
-                updatedItems.push(currentData[i]);
-              }
-            }
-          } else {
-            for (const key in currentData) {
-              if (self.matchesFilter(currentData[key], filter)) {
-                currentData[key] = { ...currentData[key], ...updateData };
-                updatedItems.push(currentData[key]);
-              }
-            }
-          }
-
-          await self.saveCollection(collectionName, currentData);
-          return updatedItems;
-        });
-      },
-
-      updateSync(filter: any, updateData: any): any[] {
-        return self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          const updatedItems: any[] = [];
-
-          if (isArray) {
-            for (let i = 0; i < currentData.length; i++) {
-              if (self.matchesFilter(currentData[i], filter)) {
-                currentData[i] = { ...currentData[i], ...updateData };
-                updatedItems.push(currentData[i]);
-              }
-            }
-          } else {
-            for (const key in currentData) {
-              if (self.matchesFilter(currentData[key], filter)) {
-                currentData[key] = { ...currentData[key], ...updateData };
-                updatedItems.push(currentData[key]);
-              }
-            }
-          }
-
-          self.saveCollectionSync(collectionName, currentData);
-          return updatedItems;
-        });
-      },
-
-      async remove(filter: any): Promise<any[]> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          const removedItems: any[] = [];
-
-          if (isArray) {
-            for (let i = currentData.length - 1; i >= 0; i--) {
-              if (self.matchesFilter(currentData[i], filter)) {
-                removedItems.push(currentData.splice(i, 1)[0]);
-              }
-            }
-          } else {
-            for (const key in currentData) {
-              if (self.matchesFilter(currentData[key], filter)) {
-                removedItems.push(currentData[key]);
-                delete currentData[key];
-              }
-            }
-          }
-
-          await self.saveCollection(collectionName, currentData);
-          return removedItems.reverse();
-        });
-      },
-
-      removeSync(filter: any): any[] {
-        return self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          const removedItems: any[] = [];
-
-          if (isArray) {
-            for (let i = currentData.length - 1; i >= 0; i--) {
-              if (self.matchesFilter(currentData[i], filter)) {
-                removedItems.push(currentData.splice(i, 1)[0]);
-              }
-            }
-          } else {
-            for (const key in currentData) {
-              if (self.matchesFilter(currentData[key], filter)) {
-                removedItems.push(currentData[key]);
-                delete currentData[key];
-              }
-            }
-          }
-
-          self.saveCollectionSync(collectionName, currentData);
-          return removedItems.reverse();
-        });
-      },
-
-      async upsert(filter: any, data: any): Promise<any> {
-        const existing = await this.findOne(filter);
-        if (existing) {
-          const updated = await this.update(filter, data);
-          return updated[0];
-        } else {
-          return await this.insert(data);
-        }
-      },
-
-      upsertSync(filter: any, data: any): any {
-        const existing = this.findOneSync(filter);
-        if (existing) {
-          const updated = this.updateSync(filter, data);
-          return updated[0];
-        } else {
-          return this.insertSync(data);
-        }
-      },
-
-      // Batch operations
-      async bulkInsert(items: any[]): Promise<any[]> {
-        return self.withLock(collectionName, async () => {
-          const results: any[] = [];
-          const currentData = await self.loadCollection(collectionName);
-          
-          let nextId = isArray && currentData.length > 0 ? 
-            Math.max(...currentData.map((item: any) => item.id || 0)) + 1 : 1;
-
-          for (const item of items) {
-            if (isArray) {
-              const newItem = { id: nextId++, ...item };
-              currentData.push(newItem);
-              results.push(newItem);
+          if (!data) {
+            if (typeof item === "string" && value !== undefined) {
+              data = {}; // key-value mode
             } else {
-              const key = item.id || nextId++;
-              currentData[key] = item;
-              results.push(item);
+              data = []; // array mode
             }
           }
 
-          await self.saveCollection(collectionName, currentData);
-          return results;
-        });
-      },
+          if (typeof item === "string" && value !== undefined) {
+            (data as Record<string, any>)[item] = value;
+            await self._save(name, data);
+            return { [item]: value };
+          }
 
-      bulkInsertSync(items: any[]): any[] {
-        return self.withSyncLock(collectionName, () => {
-          const results: any[] = [];
-          const currentData = self.loadCollectionSync(collectionName);
-          
-          let nextId = isArray && currentData.length > 0 ? 
-            Math.max(...currentData.map((item: any) => item.id || 0)) + 1 : 1;
-
-          for (const item of items) {
-            if (isArray) {
-              const newItem = { id: nextId++, ...item };
-              currentData.push(newItem);
-              results.push(newItem);
-            } else {
-              const key = item.id || nextId++;
-              currentData[key] = item;
-              results.push(item);
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            const newItem = item as T;
+            if (!newItem.id) {
+              newItem.id = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
             }
+            arr.push(newItem);
+            await self._save(name, arr);
+            return newItem;
           }
 
-          self.saveCollectionSync(collectionName, currentData);
-          return results;
+          Object.assign(data, item);
+          await self._save(name, data);
+          return item;
         });
       },
 
-      async bulkUpdate(filter: any, updateData: any): Promise<any[]> {
-        return this.update(filter, updateData);
-      },
+      insertSync: (item: T | Record<string, any>, value?: any): any => {
+        let data = self._loadSync<T>(name);
 
-      bulkUpdateSync(filter: any, updateData: any): any[] {
-        return this.updateSync(filter, updateData);
-      },
-
-      async bulkRemove(filter: any): Promise<any[]> {
-        return this.remove(filter);
-      },
-
-      bulkRemoveSync(filter: any): any[] {
-        return this.removeSync(filter);
-      },
-
-      async bulkUpsert(items: any[]): Promise<any[]> {
-        return self.withLock(collectionName, async () => {
-          const results: any[] = [];
-          for (const item of items) {
-            const result = await this.upsert({ id: item.id }, item);
-            results.push(result);
+        if (!data) {
+          if (typeof item === "string" && value !== undefined) {
+            data = {}; // key-value mode
+          } else {
+            data = []; // array mode
           }
-          return results;
-        });
-      },
+        }
 
-      bulkUpsertSync(items: any[]): any[] {
-        return self.withSyncLock(collectionName, () => {
-          const results: any[] = [];
-          for (const item of items) {
-            const result = this.upsertSync({ id: item.id }, item);
-            results.push(result);
+        if (typeof item === "string" && value !== undefined) {
+          (data as Record<string, any>)[item] = value;
+          self._saveSync(name, data);
+          return { [item]: value };
+        }
+
+        if (Array.isArray(data)) {
+          const arr = data as T[];
+          const newItem = item as T;
+          if (!newItem.id) {
+            newItem.id = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
           }
-          return results;
+          arr.push(newItem);
+          self._saveSync(name, arr);
+          return newItem;
+        }
+
+        Object.assign(data, item);
+        self._saveSync(name, data);
+        return item;
+      },
+
+      update: async (idOrKey: number | string, newData: Partial<T> | any): Promise<T | any | null> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) return null;
+
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            const index = _.findIndex(arr, { id: idOrKey });
+            if (index === -1) return null;
+            arr[index] = _.merge(arr[index], newData);
+            await self._save(name, arr);
+            return arr[index];
+          } else {
+            if (_.has(data, idOrKey)) {
+              _.set(data, idOrKey, _.merge(_.get(data, idOrKey), newData));
+              await self._save(name, data);
+              return _.get(data, idOrKey);
+            }
+            return null;
+          }
         });
       },
 
-      // Deep path operations using lodash
-      async getIn(path: string): Promise<any> {
-        const cachedData = self.lazyCache.get(collectionName) || await self.loadCollection(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        return _.get(cachedData, path);
+      updateSync: (idOrKey: number | string, newData: Partial<T> | any): T | any | null => {
+        let data = self._loadSync<T>(name);
+        if (!data) return null;
+
+        if (Array.isArray(data)) {
+          const arr = data as T[];
+          const index = _.findIndex(arr, { id: idOrKey });
+          if (index === -1) return null;
+          arr[index] = _.merge(arr[index], newData);
+          self._saveSync(name, arr);
+          return arr[index];
+        } else {
+          if (_.has(data, idOrKey)) {
+            _.set(data, idOrKey, _.merge(_.get(data, idOrKey), newData));
+            self._saveSync(name, data);
+            return _.get(data, idOrKey);
+          }
+          return null;
+        }
       },
 
-      getInSync(path: string): any {
-        const cachedData = self.lazyCache.get(collectionName) || self.loadCollectionSync(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        return _.get(cachedData, path);
-      },
+      remove: async (idOrKey: number | string): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) return false;
 
-      async setIn(path: string, value: any): Promise<void> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          _.set(currentData, path, value);
-          await self.saveCollection(collectionName, currentData);
-        });
-      },
-
-      setInSync(path: string, value: any): void {
-        self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          _.set(currentData, path, value);
-          self.saveCollectionSync(collectionName, currentData);
-        });
-      },
-
-      async mergeIn(path: string, value: any): Promise<void> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          const existing = _.get(currentData, path, {});
-          _.set(currentData, path, { ...existing, ...value });
-          await self.saveCollection(collectionName, currentData);
-        });
-      },
-
-      mergeInSync(path: string, value: any): void {
-        self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          const existing = _.get(currentData, path, {});
-          _.set(currentData, path, { ...existing, ...value });
-          self.saveCollectionSync(collectionName, currentData);
-        });
-      },
-
-      async updateIn(path: string, updater: (value: any) => any): Promise<void> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          const currentValue = _.get(currentData, path);
-          const newValue = updater(currentValue);
-          _.set(currentData, path, newValue);
-          await self.saveCollection(collectionName, currentData);
-        });
-      },
-
-      updateInSync(path: string, updater: (value: any) => any): void {
-        self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          const currentValue = _.get(currentData, path);
-          const newValue = updater(currentValue);
-          _.set(currentData, path, newValue);
-          self.saveCollectionSync(collectionName, currentData);
-        });
-      },
-
-      async pushIn(path: string, ...values: any[]): Promise<void> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          const array = _.get(currentData, path, []);
-          array.push(...values);
-          _.set(currentData, path, array);
-          await self.saveCollection(collectionName, currentData);
-        });
-      },
-
-      pushInSync(path: string, ...values: any[]): void {
-        self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          const array = _.get(currentData, path, []);
-          array.push(...values);
-          _.set(currentData, path, array);
-          self.saveCollectionSync(collectionName, currentData);
-        });
-      },
-
-      async pullIn(path: string, ...values: any[]): Promise<void> {
-        return self.withLock(collectionName, async () => {
-          const currentData = await self.loadCollection(collectionName);
-          const array = _.get(currentData, path, []);
-          const newArray = array.filter((item: any) => !values.includes(item));
-          _.set(currentData, path, newArray);
-          await self.saveCollection(collectionName, currentData);
-        });
-      },
-
-      pullInSync(path: string, ...values: any[]): void {
-        self.withSyncLock(collectionName, () => {
-          const currentData = self.loadCollectionSync(collectionName);
-          const array = _.get(currentData, path, []);
-          const newArray = array.filter((item: any) => !values.includes(item));
-          _.set(currentData, path, newArray);
-          self.saveCollectionSync(collectionName, currentData);
-        });
-      },
-
-      // Utility methods
-      async clear(): Promise<void> {
-        return self.withLock(collectionName, async () => {
-          const emptyData = isArray ? [] : {};
-          await self.saveCollection(collectionName, emptyData);
-        });
-      },
-
-      clearSync(): void {
-        self.withSyncLock(collectionName, () => {
-          const emptyData = isArray ? [] : {};
-          self.saveCollectionSync(collectionName, emptyData);
-        });
-      },
-
-      async delete(): Promise<boolean> {
-        return self.withLock(collectionName, async () => {
-          const filePath = path.join(self.dbPath, `${collectionName}.json`);
-          return new Promise<boolean>((resolve) => {
-            fs.unlink(filePath, (err) => {
-              if (!err) {
-                self.lazyCache.delete(collectionName);
-              }
-              resolve(!err);
-            });
-          });
-        });
-      },
-
-      deleteSync(): boolean {
-        return self.withSyncLock(collectionName, () => {
-          const filePath = path.join(self.dbPath, `${collectionName}.json`);
-          try {
-            fs.unlinkSync(filePath);
-            self.lazyCache.delete(collectionName);
-            return true;
-          } catch {
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            const newData = _.reject(arr, { id: idOrKey });
+            await self._save(name, newData);
+            return arr.length !== newData.length;
+          } else {
+            if (_.has(data, idOrKey)) {
+              _.unset(data, idOrKey);
+              await self._save(name, data);
+              return true;
+            }
             return false;
           }
         });
       },
 
-      async keys(): Promise<string[]> {
-        const cachedData = self.lazyCache.get(collectionName) || await self.loadCollection(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (isArray) {
-          return cachedData.map((_: any, index: number) => index.toString());
+      removeSync: (idOrKey: number | string): boolean => {
+        let data = self._loadSync<T>(name);
+        if (!data) return false;
+
+        if (Array.isArray(data)) {
+          const arr = data as T[];
+          const newData = _.reject(arr, { id: idOrKey });
+          self._saveSync(name, newData);
+          return arr.length !== newData.length;
+        } else {
+          if (_.has(data, idOrKey)) {
+            _.unset(data, idOrKey);
+            self._saveSync(name, data);
+            return true;
+          }
+          return false;
         }
-        return Object.keys(cachedData);
       },
 
-      keysSync(): string[] {
-        const cachedData = self.lazyCache.get(collectionName) || self.loadCollectionSync(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        if (isArray) {
-          return cachedData.map((_: any, index: number) => index.toString());
+      upsert: async (query: any, newData: Partial<T>): Promise<T | any> => {
+        return self._withLock(name, async () => {
+          if (_.isPlainObject(query) && (query as any).id) {
+            const existing = await this.findById((query as any).id);
+            return existing
+              ? await this.update((query as any).id, newData)
+              : await this.insert(newData as T);
+          }
+          const existing = await this.findOne(query);
+          return existing
+            ? await this.update((existing as any).id, newData)
+            : await this.insert(newData as T);
+        });
+      },
+
+      upsertSync: (query: any, newData: Partial<T>): T | any => {
+        if (_.isPlainObject(query) && (query as any).id) {
+          const existing = this.findByIdSync((query as any).id);
+          return existing
+            ? this.updateSync((query as any).id, newData)
+            : this.insertSync(newData as T);
         }
-        return Object.keys(cachedData);
+        const existing = this.findOneSync(query);
+        return existing
+          ? this.updateSync((existing as any).id, newData)
+          : this.insertSync(newData as T);
       },
 
-      async values(): Promise<any[]> {
-        const cachedData = self.lazyCache.get(collectionName) || await self.loadCollection(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
+      clear: async (asObject = false): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          await self._save(name, asObject ? {} : []);
+          return true;
+        });
+      },
+
+      clearSync: (asObject = false): boolean => {
+        self._saveSync(name, asObject ? {} : []);
+        return true;
+      },
+
+      delete: async (): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          const filePath = path.join(self.basePath, `${name}.json`);
+          await fsp.unlink(filePath).catch(() => {});
+          return true;
+        });
+      },
+
+      deleteSync: (): boolean => {
+        const filePath = path.join(self.basePath, `${name}.json`);
+        try {
+          fs.unlinkSync(filePath);
+        } catch {}
+        return true;
+      },
+
+      // ----- Batch Operations (Write with Locking) -----
+      bulkInsert: async (items: T[] | Record<string, any>[]): Promise<any[]> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+
+          if (!data) {
+            data = Array.isArray(items) && typeof items[0] === "object" && "id" in items[0] ? [] : {};
+          }
+
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            let nextId = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
+            const inserted = (items as T[]).map(item => {
+              if (!item.id) (item as any).id = nextId++;
+              arr.push(item);
+              return item;
+            });
+            await self._save(name, arr);
+            return inserted;
+          } else {
+            const obj = data as Record<string, any>;
+            (items as Record<string, any>[]).forEach(item => Object.assign(obj, item));
+            await self._save(name, obj);
+            return items;
+          }
+        });
+      },
+
+      bulkInsertSync: (items: T[] | Record<string, any>[]): any[] => {
+        let data = self._loadSync<T>(name);
+
+        if (!data) {
+          data = Array.isArray(items) && typeof items[0] === "object" && "id" in items[0] ? [] : {};
+        }
+
+        if (Array.isArray(data)) {
+          const arr = data as T[];
+          let nextId = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
+          const inserted = (items as T[]).map(item => {
+            if (!item.id) (item as any).id = nextId++;
+            arr.push(item);
+            return item;
+          });
+          self._saveSync(name, arr);
+          return inserted;
+        } else {
+          const obj = data as Record<string, any>;
+          (items as Record<string, any>[]).forEach(item => Object.assign(obj, item));
+          self._saveSync(name, obj);
+          return items;
+        }
+      },
+
+      // Bulk update multiple records by ID
+      bulkUpdate: async (updates: Array<{ id: number | string; data: Partial<T> }>): Promise<(T | null)[]> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) return updates.map(() => null);
+
+          const results: (T | null)[] = [];
+
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            updates.forEach(({ id, data: updateData }) => {
+              const index = _.findIndex(arr, { id });
+              if (index !== -1) {
+                arr[index] = _.merge(arr[index], updateData);
+                results.push(arr[index]);
+              } else {
+                results.push(null);
+              }
+            });
+          } else {
+            const obj = data as Record<string, any>;
+            updates.forEach(({ id, data: updateData }) => {
+              if (_.has(obj, id)) {
+                _.set(obj, id, _.merge(_.get(obj, id), updateData));
+                results.push(_.get(obj, id));
+              } else {
+                results.push(null);
+              }
+            });
+          }
+
+          await self._save(name, data);
+          return results;
+        });
+      },
+
+      bulkUpdateSync: (updates: Array<{ id: number | string; data: Partial<T> }>): (T | null)[] => {
+        let data = self._loadSync<T>(name);
+        if (!data) return updates.map(() => null);
+
+        const results: (T | null)[] = [];
+
+        if (Array.isArray(data)) {
+          const arr = data as T[];
+          updates.forEach(({ id, data: updateData }) => {
+            const index = _.findIndex(arr, { id });
+            if (index !== -1) {
+              arr[index] = _.merge(arr[index], updateData);
+              results.push(arr[index]);
+            } else {
+              results.push(null);
+            }
+          });
+        } else {
+          const obj = data as Record<string, any>;
+          updates.forEach(({ id, data: updateData }) => {
+            if (_.has(obj, id)) {
+              _.set(obj, id, _.merge(_.get(obj, id), updateData));
+              results.push(_.get(obj, id));
+            } else {
+              results.push(null);
+            }
+          });
+        }
+
+        self._saveSync(name, data);
+        return results;
+      },
+
+      // Bulk remove multiple records by ID
+      bulkRemove: async (ids: (number | string)[]): Promise<boolean[]> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) return ids.map(() => false);
+
+          const results: boolean[] = [];
+
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            const originalLength = arr.length;
+            ids.forEach(id => {
+              const initialLength = arr.length;
+              _.remove(arr, { id } as any);
+              results.push(arr.length < initialLength);
+            });
+          } else {
+            const obj = data as Record<string, any>;
+            ids.forEach(id => {
+              if (_.has(obj, id)) {
+                _.unset(obj, id);
+                results.push(true);
+              } else {
+                results.push(false);
+              }
+            });
+          }
+
+          await self._save(name, data);
+          return results;
+        });
+      },
+
+      bulkRemoveSync: (ids: (number | string)[]): boolean[] => {
+        let data = self._loadSync<T>(name);
+        if (!data) return ids.map(() => false);
+
+        const results: boolean[] = [];
+
+        if (Array.isArray(data)) {
+          const arr = data as T[];
+          ids.forEach(id => {
+            const initialLength = arr.length;
+            _.remove(arr, { id } as any);
+            results.push(arr.length < initialLength);
+          });
+        } else {
+          const obj = data as Record<string, any>;
+          ids.forEach(id => {
+            if (_.has(obj, id)) {
+              _.unset(obj, id);
+              results.push(true);
+            } else {
+              results.push(false);
+            }
+          });
+        }
+
+        self._saveSync(name, data);
+        return results;
+      },
+
+      // Bulk upsert - insert if not exists, update if exists
+      bulkUpsert: async (items: Array<{ query: any; data: Partial<T> }>): Promise<T[]> => {
+        return self._withLock(name, async () => {
+          const results: T[] = [];
+          let data = await self._load<T>(name);
+          
+          if (!data) {
+            data = [];
+          }
+
+          for (const { query, data: itemData } of items) {
+            if (Array.isArray(data)) {
+              const arr = data as T[];
+              let existing: T | undefined;
+              
+              if (_.isPlainObject(query) && (query as any).id) {
+                existing = _.find(arr, { id: (query as any).id });
+              } else {
+                existing = _.find(arr, query);
+              }
+
+              if (existing) {
+                // Update existing
+                const index = arr.indexOf(existing);
+                arr[index] = _.merge(arr[index], itemData);
+                results.push(arr[index]);
+              } else {
+                // Insert new
+                const newItem = itemData as T;
+                if (!newItem.id) {
+                  newItem.id = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
+                }
+                arr.push(newItem);
+                results.push(newItem);
+              }
+            } else {
+              // For object collections, merge the data
+              Object.assign(data, itemData);
+              results.push(itemData as T);
+            }
+          }
+
+          await self._save(name, data);
+          return results;
+        });
+      },
+
+      bulkUpsertSync: (items: Array<{ query: any; data: Partial<T> }>): T[] => {
+        const results: T[] = [];
+        let data = self._loadSync<T>(name);
         
-        return isArray ? cachedData : Object.values(cachedData);
+        if (!data) {
+          data = [];
+        }
+
+        for (const { query, data: itemData } of items) {
+          if (Array.isArray(data)) {
+            const arr = data as T[];
+            let existing: T | undefined;
+            
+            if (_.isPlainObject(query) && (query as any).id) {
+              existing = _.find(arr, { id: (query as any).id });
+            } else {
+              existing = _.find(arr, query);
+            }
+
+            if (existing) {
+              // Update existing
+              const index = arr.indexOf(existing);
+              arr[index] = _.merge(arr[index], itemData);
+              results.push(arr[index]);
+            } else {
+              // Insert new
+              const newItem = itemData as T;
+              if (!newItem.id) {
+                newItem.id = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
+              }
+              arr.push(newItem);
+              results.push(newItem);
+            }
+          } else {
+            // For object collections, merge the data
+            Object.assign(data, itemData);
+            results.push(itemData as T);
+          }
+        }
+
+        self._saveSync(name, data);
+        return results;
       },
 
-      valuesSync(): any[] {
-        const cachedData = self.lazyCache.get(collectionName) || self.loadCollectionSync(collectionName);
-        self.lazyCache.set(collectionName, cachedData);
-        
-        return isArray ? cachedData : Object.values(cachedData);
+      // ----- Utilities (Read Operations - No Locking Needed) -----
+      keys: async (): Promise<(string | number)[]> => {
+        const data = await self._load<T>(name);
+        return Array.isArray(data) ? data.map((r: any) => r.id) : Object.keys(data ?? {});
       },
 
-      async first(): Promise<any> {
-        const values = await this.values();
-        return values[0] || null;
+      keysSync: (): (string | number)[] => {
+        const data = self._loadSync<T>(name);
+        return Array.isArray(data) ? data.map((r: any) => r.id) : Object.keys(data ?? {});
       },
 
-      firstSync(): any {
-        const values = this.valuesSync();
-        return values[0] || null;
+      values: async (): Promise<T[] | any> => {
+        return (await self._load<T>(name)) ?? [];
       },
 
-      async last(): Promise<any> {
-        const values = await this.values();
-        return values[values.length - 1] || null;
+      valuesSync: (): T[] | any => {
+        return self._loadSync<T>(name) ?? [];
       },
 
-      lastSync(): any {
-        const values = this.valuesSync();
-        return values[values.length - 1] || null;
-      }
+      first: async (): Promise<T | null> => {
+        const data = await self._load<T>(name);
+        return Array.isArray(data) && data.length ? data[0] : null;
+      },
+
+      firstSync: (): T | null => {
+        const data = self._loadSync<T>(name);
+        return Array.isArray(data) && data.length ? data[0] : null;
+      },
+
+      last: async (): Promise<T | null> => {
+        const data = await self._load<T>(name);
+        return Array.isArray(data) && data.length ? data[data.length - 1] : null;
+      },
+
+      lastSync: (): T | null => {
+        const data = self._loadSync<T>(name);
+        return Array.isArray(data) && data.length ? data[data.length - 1] : null;
+      },
+
+      // ----- Deep path helpers (Write Operations with Locking) -----
+      getIn: async (pathStr: string, defaultValue?: any): Promise<any> => {
+        const data = await self._load<T>(name);
+        return _.get(data, pathStr, defaultValue);
+      },
+
+      getInSync: (pathStr: string, defaultValue?: any): any => {
+        const data = self._loadSync<T>(name);
+        return _.get(data, pathStr, defaultValue);
+      },
+
+      setIn: async (pathStr: string, value: any): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) data = {};
+          _.set(data, pathStr, value);
+          await self._save(name, data);
+          return true;
+        });
+      },
+
+      setInSync: (pathStr: string, value: any): boolean => {
+        let data = self._loadSync<T>(name);
+        if (!data) data = {};
+        _.set(data, pathStr, value);
+        self._saveSync(name, data);
+        return true;
+      },
+
+      mergeIn: async (pathStr: string, value: any): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) data = {};
+          const current = _.get(data, pathStr, {});
+          _.set(data, pathStr, _.merge(current, value));
+          await self._save(name, data);
+          return true;
+        });
+      },
+
+      mergeInSync: (pathStr: string, value: any): boolean => {
+        let data = self._loadSync<T>(name);
+        if (!data) data = {};
+        const current = _.get(data, pathStr, {});
+        _.set(data, pathStr, _.merge(current, value));
+        self._saveSync(name, data);
+        return true;
+      },
+
+      pushIn: async (pathStr: string, value: any): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) data = {};
+          const arr = _.get(data, pathStr, []);
+          if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
+          arr.push(value);
+          _.set(data, pathStr, arr);
+          await self._save(name, data);
+          return true;
+        });
+      },
+
+      pushInSync: (pathStr: string, value: any): boolean => {
+        let data = self._loadSync<T>(name);
+        if (!data) data = {};
+        const arr = _.get(data, pathStr, []);
+        if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
+        arr.push(value);
+        _.set(data, pathStr, arr);
+        self._saveSync(name, data);
+        return true;
+      },
+
+      pullIn: async (pathStr: string, predicate: any): Promise<any[]> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) data = {};
+          const arr = _.get(data, pathStr, []);
+          if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
+          const removed: any[] = [];
+          _.remove(arr, (val: any) => {
+            const match = typeof predicate === "function" ? predicate(val) : _.isMatch(val, predicate);
+            if (match) removed.push(val);
+            return match;
+          });
+          _.set(data, pathStr, arr);
+          await self._save(name, data);
+          return removed;
+        });
+      },
+
+      pullInSync: (pathStr: string, predicate: any): any[] => {
+        let data = self._loadSync<T>(name);
+        if (!data) data = {};
+        const arr = _.get(data, pathStr, []);
+        if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
+        const removed: any[] = [];
+        _.remove(arr, (val: any) => {
+          const match = typeof predicate === "function" ? predicate(val) : _.isMatch(val, predicate);
+          if (match) removed.push(val);
+          return match;
+        });
+        _.set(data, pathStr, arr);
+        self._saveSync(name, data);
+        return removed;
+      },
+
+      deleteIn: async (pathStr: string): Promise<boolean> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) return false;
+          const removed = _.unset(data, pathStr);
+          if (removed) {
+            await self._save(name, data);
+          }
+          return removed;
+        });
+      },
+
+      deleteInSync: (pathStr: string): boolean => {
+        let data = self._loadSync<T>(name);
+        if (!data) return false;
+        const removed = _.unset(data, pathStr);
+        if (removed) {
+          self._saveSync(name, data);
+        }
+        return removed;
+      },
+
+      updateIn: async (pathStr: string, updater: (value: any) => any): Promise<any> => {
+        return self._withLock(name, async () => {
+          let data = await self._load<T>(name);
+          if (!data) data = {};
+          const current = _.get(data, pathStr);
+          const updated = updater(current);
+          _.set(data, pathStr, updated);
+          await self._save(name, data);
+          return updated;
+        });
+      },
+
+      updateInSync: (pathStr: string, updater: (value: any) => any): any => {
+        let data = self._loadSync<T>(name);
+        if (!data) data = {};
+        const current = _.get(data, pathStr);
+        const updated = updater(current);
+        _.set(data, pathStr, updated);
+        self._saveSync(name, data);
+        return updated;
+      },
     };
   }
-
-  private matchesFilter(item: any, filter: any): boolean {
-    if (typeof filter === 'function') {
-      return filter(item);
-    }
-    
-    for (const key in filter) {
-      if (item[key] !== filter[key]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // Main collection access
-  get collections() {
-    return new Proxy({}, {
-      get: (target, prop: string) => {
-        return this.createCollection({ [prop]: this.getCollectionType(prop) }, prop);
-      }
-    });
-  }
-
-  // Lazy cached collection access
-  get cached() {
-    return this._cached;
-  }
-
-  // Cache management methods
-  getCacheStats(): CacheStats {
-    return this.lazyCache.getStats();
-  }
-
-  getTopAccessedCollections(limit = 10): Array<[string, number]> {
-    return this.lazyCache.getTopAccessed(limit);
-  }
-
-  async warmCache(collections: string[]): Promise<void> {
-    await this.lazyCache.warmUp(collections, async (collectionName) => {
-      return this.loadCollection(collectionName);
-    });
-  }
-
-  async smartWarmCache(topN = 10): Promise<void> {
-    await this.lazyCache.smartWarm(async (collectionName) => {
-      return this.loadCollection(collectionName);
-    }, topN);
-  }
-
-  clearCache(): void {
-    this.lazyCache.clear();
-  }
-
-  // Force refresh cache from disk for a specific collection
-  refreshCache(collectionName: string): void {
-    this.refreshCacheFromDisk(collectionName);
-  }
-
-  // Force refresh cache from disk for all cached collections
-  refreshAllCaches(): void {
-    const stats = this.lazyCache.getStats();
-    stats.accessPatterns.forEach((_, collectionName) => {
-      this.refreshCacheFromDisk(collectionName);
-    });
-  }
-
-  // Global database operations
-  async deleteAll(): Promise<void> {
-    const files = fs.readdirSync(this.dbPath);
-    const promises = files
-      .filter(file => file.endsWith('.json'))
-      .map(file => {
-        return new Promise<void>((resolve) => {
-          fs.unlink(path.join(this.dbPath, file), () => resolve());
-        });
-      });
-    
-    await Promise.all(promises);
-    this.lazyCache.clear();
-  }
-
-  deleteAllSync(): void {
-    const files = fs.readdirSync(this.dbPath);
-    files
-      .filter(file => file.endsWith('.json'))
-      .forEach(file => {
-        try {
-          fs.unlinkSync(path.join(this.dbPath, file));
-        } catch {
-          // Ignore errors
-        }
-      });
-    
-    // Clean up any remaining lock files
-    files
-      .filter(file => file.endsWith('.lock'))
-      .forEach(file => {
-        try {
-          fs.unlinkSync(path.join(this.dbPath, file));
-        } catch {
-          // Ignore errors
-        }
-      });
-    
-    this.lazyCache.clear();
-  }
 }
-
-export { JsonDB, LazyCache, CacheOptions, CacheStats };
-export default JsonDB;
