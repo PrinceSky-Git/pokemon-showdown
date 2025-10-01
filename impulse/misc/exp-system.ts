@@ -7,12 +7,14 @@
 if (this.user.registered) Impulse.ExpSystem.addExp(this.user.id, 1);
 */
 
+import { MongoDB } from '../../impulse/mongodb_module';
+
 const DEFAULT_EXP = 0;
 const EXP_UNIT = `EXP`;
 Impulse.expUnit = EXP_UNIT;
 
 const MIN_LEVEL_EXP = 10;
-const MULTIPLIER = 1.4;
+const MULTIPLIER = 1.5;
 let DOUBLE_EXP = false;
 let DOUBLE_EXP_END_TIME: number | null = null;
 const EXP_COOLDOWN = 30000;
@@ -30,34 +32,36 @@ const getDurationMs = (value: number, unit: string): number => {
   return value * (units[unit] || 0);
 };
 
-interface ExpData {
-  [userid: string]: number;
-}
-
 interface CooldownData {
   [userid: string]: number;
 }
 
-interface LevelAchievementData {
-  [userid: string]: number[];
+// MongoDB Document Interfaces
+interface ExpDocument {
+  _id: string; // userid
+  exp: number;
+  level: number;
+  lastUpdated: Date;
 }
 
-// Add config for double exp and other settings
-interface ExpConfig {
+interface ExpConfigDocument {
+  _id: string; // 'config'
   doubleExp: boolean;
   doubleExpEndTime: number | null;
+  lastUpdated: Date;
 }
+
+// Get typed MongoDB collections
+const ExpDB = MongoDB<ExpDocument>('expdata');
+const ExpConfigDB = MongoDB<ExpConfigDocument>('expconfig');
 
 export class ExpSystem {
   private static cooldowns: CooldownData = {};
-  private static config: ExpConfig = { doubleExp: false, doubleExpEndTime: null };
 
   private static async loadExpConfig(): Promise<void> {
     try {
-      const config = await DB.expConfig.get() as ExpConfig;
-      if (config && typeof config === 'object') {
-        this.config = config;
-        // Restore double exp settings if they exist
+      const config = await ExpConfigDB.findById('config');
+      if (config) {
         DOUBLE_EXP = config.doubleExp;
         DOUBLE_EXP_END_TIME = config.doubleExpEndTime;
       }
@@ -68,11 +72,17 @@ export class ExpSystem {
 
   private static async saveExpConfig(): Promise<void> {
     try {
-      const config: ExpConfig = {
+      const config = {
         doubleExp: DOUBLE_EXP,
-        doubleExpEndTime: DOUBLE_EXP_END_TIME
+        doubleExpEndTime: DOUBLE_EXP_END_TIME,
+        lastUpdated: new Date(),
       };
-      await DB.expConfig.insert('config', config);
+      
+      // Use upsert to create or update
+      await ExpConfigDB.upsert(
+        { _id: 'config' },
+        config
+      );
     } catch (error) {
       console.error(`Error saving EXP config: ${error}`);
     }
@@ -84,12 +94,23 @@ export class ExpSystem {
   }
 
   static async writeExp(userid: string, amount: number): Promise<void> {
-    await DB.expData.insert(toID(userid), amount);
+    const id = toID(userid);
+    const level = this.getLevel(amount);
+    
+    await ExpDB.upsert(
+      { _id: id },
+      {
+        exp: amount,
+        level: level,
+        lastUpdated: new Date(),
+      }
+    );
   }
 
   static async readExp(userid: string): Promise<number> {
-    const exp = await DB.expData.get();
-    return exp && typeof exp === 'object' ? (exp as ExpData)[toID(userid)] || DEFAULT_EXP : DEFAULT_EXP;
+    const id = toID(userid);
+    const doc = await ExpDB.findById(id);
+    return doc ? doc.exp : DEFAULT_EXP;
   }
 
   static async hasExp(userid: string, amount: number): Promise<boolean> {
@@ -115,17 +136,36 @@ export class ExpSystem {
     
     const gainedAmount = DOUBLE_EXP ? amount * 2 : amount;
     const newExp = currentExp + gainedAmount;
+    const newLevel = this.getLevel(newExp);
     
-    await DB.expData.insert(id, newExp);
+    // Use updateOne with $inc for atomic increment, or upsert if document doesn't exist
+    const exists = await ExpDB.exists({ _id: id });
+    
+    if (exists) {
+      // Use $inc for atomic increment
+      await ExpDB.updateOne(
+        { _id: id },
+        { 
+          $inc: { exp: gainedAmount },
+          $set: { level: newLevel, lastUpdated: new Date() }
+        }
+      );
+    } else {
+      // Create new document
+      await ExpDB.insertOne({
+        _id: id,
+        exp: newExp,
+        level: newLevel,
+        lastUpdated: new Date(),
+      } as any);
+    }
     
     if (!by) {
       this.cooldowns[id] = Date.now();
     }
     
     // Check if user leveled up
-    const newLevel = this.getLevel(newExp);
     if (newLevel > currentLevel) {
-      // User leveled up!
       await this.notifyLevelUp(id, newLevel, currentLevel);
     }
     
@@ -140,13 +180,12 @@ export class ExpSystem {
     
     const gainedAmount = DOUBLE_EXP ? amount * 2 : amount;
     const newExp = currentExp + gainedAmount;
+    const newLevel = this.getLevel(newExp);
     
-    await DB.expData.insert(id, newExp);
+    await this.writeExp(id, newExp);
     
     // Check if user leveled up
-    const newLevel = this.getLevel(newExp);
     if (newLevel > currentLevel) {
-      // User leveled up!
       await this.notifyLevelUp(id, newLevel, currentLevel);
     }
     
@@ -220,7 +259,7 @@ export class ExpSystem {
         `</div>`;
     } else {
       message = 
-        `<div class="broadcast-blue">` +
+        `<div class="broadcast-green">` +
         `<b>Double EXP has been ${DOUBLE_EXP_END_TIME ? 'ended' : 'disabled'}${user ? ` by ${Impulse.nameColor(user.name, true, true)}` : ''}!</b><br>` +
         `All EXP gains will now be normal.` +
         `</div>`;
@@ -250,23 +289,21 @@ export class ExpSystem {
     const currentExp = await this.readExp(id);
     if (currentExp >= amount) {
       const newExp = currentExp - amount;
-      await DB.expData.insert(id, newExp);
+      await this.writeExp(id, newExp);
       return newExp;
     }
     return currentExp;
   }
 
   static async resetAllExp(): Promise<void> {
-    await DB.expData.clear(true);
+    // Use deleteMany to clear all exp data
+    await ExpDB.deleteMany({});
   }
 
   static async getRichestUsers(limit: number = 100): Promise<[string, number][]> {
-    const data = await DB.expData.get() as ExpData;
-    if (!data || typeof data !== 'object') return [];
-    
-    return Object.entries(data)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, limit);
+    // Use findSorted with limit for efficient sorting
+    const docs = await ExpDB.findSorted({}, { exp: -1 }, limit);
+    return docs.map(doc => [doc._id, doc.exp]);
   }
 
   static getLevel(exp: number): number {
