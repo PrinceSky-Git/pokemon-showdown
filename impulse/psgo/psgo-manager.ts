@@ -166,80 +166,80 @@ export class PSGOCardManager {
 
 	// Modern card display
 	static displayCard(card: Card): string {
-		const {RARITY_COLORS, SPECIAL_SUBTYPES} = require('./psgo-models');
-		const points = this.getCardPoints(card);
-		const formattedTypes = this.formatCardTypes(card);
-		const rarityColor = RARITY_COLORS[card.rarity] || '#cc0000';
-		
-		const hasSpecialSubtype = card.subtypes?.some(st => SPECIAL_SUBTYPES[st]);
-		const borderColor = hasSpecialSubtype && card.subtypes ? 
-			SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color || rarityColor : rarityColor;
-		const glowEffect = hasSpecialSubtype && card.subtypes && 
-			SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.glow ? 
-			`box-shadow: 0 0 12px ${borderColor}50` : '';
+  const {RARITY_COLORS, SPECIAL_SUBTYPES} = require('./psgo-models');
+  const points = this.getCardPoints(card);
+  const formattedTypes = this.formatCardTypes(card);
+  const rarityColor = RARITY_COLORS[card.rarity] || '#cc0000';
+  
+  const hasSpecialSubtype = card.subtypes?.some(st => SPECIAL_SUBTYPES[st]);
+  const borderColor = hasSpecialSubtype && card.subtypes ? 
+    SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color || rarityColor : rarityColor;
+  const glowEffect = hasSpecialSubtype && card.subtypes && 
+    SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.glow ? 
+    `box-shadow: 0 0 12px ${borderColor}50` : '';
 
-		let additionalInfo = '';
+  let additionalInfo = ``;
 
-		if (card.supertype === 'PokÃ©mon') {
-			const pokemonCard = card as PokemonCard;
-			additionalInfo += `<div style="margin-bottom: 10px"><strong>HP:</strong> ${pokemonCard.hp}</div>`;
-			
-			if (pokemonCard.evolvesFrom) {
-				additionalInfo += `<div style="margin-bottom: 10px"><strong>Evolves From:</strong> ${pokemonCard.evolvesFrom}</div>`;
-			}
-			
-			if (pokemonCard.attacks && pokemonCard.attacks.length > 0) {
-				additionalInfo += `<div style="margin-bottom: 10px"><strong>Attacks:</strong><br>`;
-				for (const attack of pokemonCard.attacks) {
-					additionalInfo += `${attack.name}`;
-					if (attack.damage) additionalInfo += ` ${attack.damage}`;
-					if (attack.text) additionalInfo += ` - ${attack.text}`;
-					additionalInfo += `<br>`;
-				}
-				additionalInfo += `</div>`;
-			}
+  if (card.supertype === 'PokÃ©mon') {
+    const pokemonCard = card as PokemonCard;
+    additionalInfo += `<div style="margin-bottom: 10px"><strong>HP:</strong> ` + pokemonCard.hp + `</div>`;
+    
+    if (pokemonCard.evolvesFrom) {
+      additionalInfo += `<div style="margin-bottom: 10px"><strong>Evolves From:</strong> ` + pokemonCard.evolvesFrom + `</div>`;
+    }
+    
+    if (pokemonCard.attacks && pokemonCard.attacks.length > 0) {
+      additionalInfo += `<div style="margin-bottom: 10px"><strong>Attacks:</strong><br>`;
+      for (const attack of pokemonCard.attacks) {
+        additionalInfo += `` + attack.name;
+        if (attack.damage) additionalInfo += ` ` + attack.damage;
+        if (attack.text) additionalInfo += ` - ` + attack.text;
+        additionalInfo += `<br>`;
+      }
+      additionalInfo += `</div>`;
+    }
 
-			if (pokemonCard.abilities && pokemonCard.abilities.length > 0) {
-				additionalInfo += `<div style="margin-bottom: 10px"><strong>Abilities:</strong><br>`;
-				for (const ability of pokemonCard.abilities) {
-					additionalInfo += `${ability.name} (${ability.type})<br>`;
-					if (ability.text) additionalInfo += `${ability.text}<br>`;
-				}
-				additionalInfo += `</div>`;
-			}
+    if (pokemonCard.abilities && pokemonCard.abilities.length > 0) {
+      additionalInfo += `<div style="margin-bottom: 10px"><strong>Abilities:</strong><br>`;
+      for (const ability of pokemonCard.abilities) {
+        additionalInfo += `` + ability.name + ` (` + ability.type + `)<br>`;
+        if (ability.text) additionalInfo += `` + ability.text + `<br>`;
+      }
+      additionalInfo += `</div>`;
+    }
 
-			if (pokemonCard.weaknesses && pokemonCard.weaknesses.length > 0) {
-				const weaknessStr = pokemonCard.weaknesses.map(w => `${w.type} ${w.value}`).join(', ');
-				additionalInfo += `<div style="margin-bottom: 10px"><strong>Weakness:</strong> ${weaknessStr}</div>`;
-			}
+    if (pokemonCard.weaknesses && pokemonCard.weaknesses.length > 0) {
+      const weaknessStr = pokemonCard.weaknesses.map(w => `` + w.type + ` ` + w.value).join(', ');
+      additionalInfo += `<div style="margin-bottom: 10px"><strong>Weakness:</strong> ` + weaknessStr + `</div>`;
+    }
 
-			if (pokemonCard.retreatCost && pokemonCard.retreatCost.length > 0) {
-				additionalInfo += `<div style="margin-bottom: 10px"><strong>Retreat Cost:</strong> ${pokemonCard.retreatCost.length}</div>`;
-			}
-		} else if (card.rules && card.rules.length > 0) {
-			additionalInfo += `<div style="margin-bottom: 10px"><strong>Effects:</strong><br>${card.rules.join('<br>')}</div>`;
-		}
+    if (pokemonCard.retreatCost && pokemonCard.retreatCost.length > 0) {
+      additionalInfo += `<div style="margin-bottom: 10px"><strong>Retreat Cost:</strong> ` + pokemonCard.retreatCost.length + `</div>`;
+    }
+  } else if (card.rules && card.rules.length > 0) {
+    additionalInfo += `<div style="margin-bottom: 10px"><strong>Effects:</strong><br>` + card.rules.join('<br>') + `</div>`;
+  }
 
-		return `<div style="border: 2px solid ${borderColor}; ${glowEffect}; border-radius: 8px; padding: 16px; overflow: hidden;">
-			<table style="width: 100%; border-collapse: collapse;">
-				<tr>
-					<td style="width: 210px; vertical-align: top; padding-right: 24px;">
-						<img src="${card.images.small}" alt="${card.name}" width="200" style="display: block; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
-					</td>
-					<td style="vertical-align: top; line-height: 1.7;">
-						<div style="font-size: 2em; font-weight: bold; margin-bottom: 8px;">${card.name}</div>
-						<div style="color: ${rarityColor}; font-weight: bold; font-size: 1.2em; margin-bottom: 20px;">${card.rarity}</div>
-						<div style="margin-bottom: 10px;"><strong>ID:</strong> ${card.id}</div>
-						<div style="margin-bottom: 10px;"><strong>Number:</strong> ${card.number}</div>
-						<div style="margin-bottom: 10px;"><strong>Types:</strong> ${formattedTypes}</div>
-						<div style="margin-bottom: 10px;"><strong>Artist:</strong> ${card.artist}</div>
-						${additionalInfo}
-						${card.flavorText ? `<div style="margin-bottom: 10px; font-style: italic; color: #666;">${card.flavorText}</div>` : ''}
-						<div style="margin-top: 16px; font-size: 1.1em;"><strong>Points:</strong> ${points}${this.getSubtypeBonus(card) > 0 ? ` <span style="color: #4caf50;">(+${this.getSubtypeBonus(card)})</span>` : ''}</div>
-					</td>
-				</tr>
-			</table>
-		</div>`;
+  return `<div style="border: 2px solid ` + borderColor + `; ` + glowEffect + `; border-radius: 8px; padding: 16px; overflow: hidden;">` +
+    `<table style="width: 100%; border-collapse: collapse;">` +
+      `<tr>` +
+        `<td style="width: 210px; vertical-align: top; padding-right: 24px;">` +
+          `<img src="` + card.images.small + `" alt="` + card.name + `" width="200" style="display: block; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">` +
+        `</td>` +
+        `<td style="vertical-align: top; line-height: 1.7;">` +
+          `<div style="font-size: 2em; font-weight: bold; margin-bottom: 8px;">` + card.name + `</div>` +
+          `<div style="color: ` + rarityColor + `; font-weight: bold; font-size: 1.2em; margin-bottom: 20px;">` + card.rarity + `</div>` +
+          `<div style="margin-bottom: 10px;"><strong>ID:</strong> ` + card.id + `</div>` +
+          `<div style="margin-bottom: 10px;"><strong>Number:</strong> ` + card.number + `</div>` +
+          `<div style="margin-bottom: 10px;"><strong>Types:</strong> ` + formattedTypes + `</div>` +
+          `<div style="margin-bottom: 10px;"><strong>Artist:</strong> ` + card.artist + `</div>` +
+          `` + additionalInfo +
+          (card.flavorText ? `<div style="margin-bottom: 10px; font-style: italic; color: #666;">` + card.flavorText + `</div>` : ``) +
+          `<div style="margin-top: 16px; font-size: 1.1em;"><strong>Points:</strong> ` + points + (this.getSubtypeBonus(card) > 0 ? ` <span style="color: #4caf50;">(+` + this.getSubtypeBonus(card) + `)</span>` : ``) + `</div>` +
+        `</td>` +
+      `</tr>` +
+    `</table>` +
+  `</div>`;
 	}
 
 	// Economy integration
