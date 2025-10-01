@@ -1,0 +1,20 @@
+{
+  "name": "pokemon-showdown-mongodb",
+  "description": "MongoDB dependencies for Pokemon Showdown JsonDB",
+  "dependencies": {
+    "mongodb": "^6.2.0"
+  },
+  "devDependencies": {
+    "@types/mongodb": "^4.0.7"
+  },
+  "peerDependencies": {
+    "lodash": "^4.17.21"
+  },
+  "scripts": {
+    "install-mongodb": "npm install mongodb @types/mongodb",
+    "test-connection": "node -e \"const { MongoClient } = require('mongodb'); MongoClient.connect(process.env.MONGODB_URI).then(() => console.log('✅ MongoDB connection successful')).catch(err => console.error('❌ MongoDB connection failed:', err.message))\""
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
