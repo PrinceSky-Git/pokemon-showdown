@@ -1,7 +1,7 @@
 /*
-* PokemonShowdown JasonDB with MongoDB Cloud Support
-* Hybrid DB supporting both local JSON files and MongoDB Cloud
-* @author ClarkJ338 (Enhanced with MongoDB support)
+* PokemonShowdown JasonDB
+* Proxy DB built around fs and lodash with concurrent write safety
+* @author ClarkJ338
 * @license MIT
 */
 
@@ -9,7 +9,6 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import _ from "lodash";
-import { MongoClient, Db, Collection, MongoClientOptions } from "mongodb";
 
 type CollectionData<T> = T[] | Record<string, any>;
 
@@ -19,44 +18,18 @@ interface PendingOperation {
   operation: () => Promise<any>;
 }
 
-interface MongoConfig {
-  uri: string;
-  dbName: string;
-  options?: MongoClientOptions;
-}
-
-interface DatabaseConfig {
-  mode: 'json' | 'mongodb' | 'hybrid';
-  basePath?: string;
-  mongodb?: MongoConfig;
-  defaultToMongo?: string[]; // Collections that should default to MongoDB in hybrid mode
-}
-
 export class JsonDB {
   private basePath: string;
   private locks: Map<string, Promise<any>> = new Map();
   private queues: Map<string, PendingOperation[]> = new Map();
   private cache: Map<string, CollectionData<any>> = new Map();
+  private cacheLoaded: Set<string> = new Set();
   public cached: any;
-  
-  // MongoDB properties
-  private config: DatabaseConfig;
-  private mongoClient?: MongoClient;
-  private mongodb?: Db;
-  private isConnected: boolean = false;
 
-  constructor(config: DatabaseConfig = { mode: 'json', basePath: "./db" }) {
-    this.config = config;
-    this.basePath = config.basePath || "./db";
-    
-    // Initialize JSON storage if needed
-    if (config.mode !== 'mongodb' && !fs.existsSync(this.basePath)) {
-      fs.mkdirSync(this.basePath, { recursive: true });
-    }
-
-    // Initialize MongoDB if configured
-    if (config.mode !== 'json' && config.mongodb) {
-      this._initializeMongoDB();
+  constructor(basePath: string = "./db") {
+    this.basePath = basePath;
+    if (!fs.existsSync(basePath)) {
+      fs.mkdirSync(basePath, { recursive: true });
     }
 
     const proxy = new Proxy(this, {
@@ -80,55 +53,6 @@ export class JsonDB {
     return proxy;
   }
 
-  private async _initializeMongoDB(): Promise<void> {
-    if (!this.config.mongodb || this.isConnected) return;
-
-    try {
-      this.mongoClient = new MongoClient(this.config.mongodb.uri, this.config.mongodb.options);
-      await this.mongoClient.connect();
-      this.mongodb = this.mongoClient.db(this.config.mongodb.dbName);
-      this.isConnected = true;
-      console.log(`Connected to MongoDB: ${this.config.mongodb.dbName}`);
-    } catch (error) {
-      console.error('Failed to connect to MongoDB:', error);
-      if (this.config.mode === 'mongodb') {
-        throw error; // Fail if MongoDB-only mode
-      }
-      // In hybrid mode, continue with JSON fallback
-    }
-  }
-
-  public async connect(): Promise<void> {
-    if (this.config.mode !== 'json' && !this.isConnected) {
-      await this._initializeMongoDB();
-    }
-  }
-
-  public async disconnect(): Promise<void> {
-    if (this.mongoClient && this.isConnected) {
-      await this.mongoClient.close();
-      this.isConnected = false;
-      console.log('Disconnected from MongoDB');
-    }
-  }
-
-  private _shouldUseMongoDB(collection: string): boolean {
-    if (this.config.mode === 'json') return false;
-    if (this.config.mode === 'mongodb') return true;
-    
-    // Hybrid mode logic
-    if (!this.isConnected) return false;
-    if (this.config.defaultToMongo?.includes(collection)) return true;
-    
-    // Default to JSON in hybrid mode unless specified
-    return false;
-  }
-
-  private _getMongoCollection<T>(collection: string): Collection<T> {
-    if (!this.mongodb) throw new Error('MongoDB not connected');
-    return this.mongodb.collection<T>(collection);
-  }
-
   private _getFilePath(collection: string): string {
     return path.join(this.basePath, `${collection}.json`);
   }
@@ -149,107 +73,66 @@ export class JsonDB {
     }
   }
 
-  private async _loadFromMongo<T>(collection: string): Promise<CollectionData<T>> {
-    const mongoCollection = this._getMongoCollection<T>(collection);
-    const docs = await mongoCollection.find({}).toArray();
-    
-    // Convert MongoDB _id to id for consistency
-    return docs.map(doc => {
-      const { _id, ...rest } = doc as any;
-      return { id: _id, ...rest };
-    }) as CollectionData<T>;
+  /**
+   * Ensures cache is loaded for a collection (only loads once)
+   */
+  private async _ensureCacheLoaded<T>(collection: string): Promise<void> {
+    if (this.cacheLoaded.has(collection)) {
+      return; // Already loaded
+    }
+
+    // Load from disk into cache
+    await this._ensureCollectionFile(collection);
+    const raw = await fsp.readFile(this._getFilePath(collection), "utf-8");
+    const data = raw && raw !== "null" ? JSON.parse(raw) : null;
+    this.cache.set(collection, data);
+    this.cacheLoaded.add(collection);
   }
 
-  private async _saveToMongo<T>(collection: string, data: CollectionData<T>): Promise<void> {
-    const mongoCollection = this._getMongoCollection(collection);
-    
-    // Clear existing data
-    await mongoCollection.deleteMany({});
-    
-    if (Array.isArray(data) && data.length > 0) {
-      // Convert id to _id for MongoDB
-      const mongoData = data.map(item => {
-        const { id, ...rest } = item as any;
-        return { _id: id, ...rest };
-      });
-      await mongoCollection.insertMany(mongoData);
-    } else if (!Array.isArray(data) && Object.keys(data).length > 0) {
-      // For object collections, store as key-value documents
-      const docs = Object.entries(data).map(([key, value]) => ({
-        _id: key,
-        value: value
-      }));
-      await mongoCollection.insertMany(docs);
-    }
-  }
-
-  private async _load<T>(collection: string, useCache: boolean = false): Promise<CollectionData<T>> {
-    if (useCache && this.cache.has(collection)) {
-      return this.cache.get(collection)!;
+  /**
+   * Ensures cache is loaded synchronously for a collection (only loads once)
+   */
+  private _ensureCacheLoadedSync<T>(collection: string): void {
+    if (this.cacheLoaded.has(collection)) {
+      return; // Already loaded
     }
 
-    let data: CollectionData<T>;
-
-    if (this._shouldUseMongoDB(collection)) {
-      try {
-        data = await this._loadFromMongo<T>(collection);
-      } catch (error) {
-        console.warn(`MongoDB load failed for ${collection}, falling back to JSON:`, error);
-        // Fallback to JSON
-        await this._ensureCollectionFile(collection);
-        const raw = await fsp.readFile(this._getFilePath(collection), "utf-8");
-        data = raw && raw !== "null" ? JSON.parse(raw) : null;
-      }
-    } else {
-      await this._ensureCollectionFile(collection);
-      const raw = await fsp.readFile(this._getFilePath(collection), "utf-8");
-      data = raw && raw !== "null" ? JSON.parse(raw) : null;
-    }
-
-    if (useCache) {
-      this.cache.set(collection, data);
-    }
-
-    return data;
-  }
-
-  private _loadSync<T>(collection: string, useCache: boolean = false): CollectionData<T> {
-    if (useCache && this.cache.has(collection)) {
-      return this.cache.get(collection)!;
-    }
-
-    // Sync operations only work with JSON files
+    // Load from disk into cache
     this._ensureCollectionFileSync(collection);
     const raw = fs.readFileSync(this._getFilePath(collection), "utf-8");
     const data = raw && raw !== "null" ? JSON.parse(raw) : null;
+    this.cache.set(collection, data);
+    this.cacheLoaded.add(collection);
+  }
 
+  private async _load<T>(collection: string, useCache: boolean = false): Promise<CollectionData<T>> {
     if (useCache) {
-      this.cache.set(collection, data);
+      await this._ensureCacheLoaded<T>(collection);
+      return this.cache.get(collection)!;
     }
 
-    return data;
+    await this._ensureCollectionFile(collection);
+    const raw = await fsp.readFile(this._getFilePath(collection), "utf-8");
+    return raw && raw !== "null" ? JSON.parse(raw) : null;
+  }
+
+  private _loadSync<T>(collection: string, useCache: boolean = false): CollectionData<T> {
+    if (useCache) {
+      this._ensureCacheLoadedSync<T>(collection);
+      return this.cache.get(collection)!;
+    }
+
+    this._ensureCollectionFileSync(collection);
+    const raw = fs.readFileSync(this._getFilePath(collection), "utf-8");
+    return raw && raw !== "null" ? JSON.parse(raw) : null;
   }
 
   private async _save<T>(collection: string, data: CollectionData<T>, useCache: boolean = false) {
-    if (this._shouldUseMongoDB(collection)) {
-      try {
-        await this._saveToMongo(collection, data);
-      } catch (error) {
-        console.warn(`MongoDB save failed for ${collection}, falling back to JSON:`, error);
-        // Fallback to JSON
-        await fsp.writeFile(
-          this._getFilePath(collection),
-          JSON.stringify(data, null, 2),
-          "utf-8"
-        );
-      }
-    } else {
-      await fsp.writeFile(
-        this._getFilePath(collection),
-        JSON.stringify(data, null, 2),
-        "utf-8"
-      );
-    }
+    await fsp.writeFile(
+      this._getFilePath(collection),
+      JSON.stringify(data, null, 2),
+      "utf-8"
+    );
 
     if (useCache) {
       this.cache.set(collection, data);
@@ -257,7 +140,6 @@ export class JsonDB {
   }
 
   private _saveSync<T>(collection: string, data: CollectionData<T>, useCache: boolean = false) {
-    // Sync operations only work with JSON files
     fs.writeFileSync(
       this._getFilePath(collection),
       JSON.stringify(data, null, 2),
@@ -340,113 +222,54 @@ export class JsonDB {
     }
   }
 
+  // -------- Cache Management --------
+  /**
+   * Manually invalidate cache for a specific collection
+   */
+  public invalidateCache(collection: string): void {
+    this.cache.delete(collection);
+    this.cacheLoaded.delete(collection);
+  }
+
+  /**
+   * Clear all caches
+   */
+  public clearAllCaches(): void {
+    this.cache.clear();
+    this.cacheLoaded.clear();
+  }
+
+  /**
+   * Check if a collection is cached
+   */
+  public isCached(collection: string): boolean {
+    return this.cacheLoaded.has(collection);
+  }
+
   // -------- Global Utility --------
   public async deleteAll(): Promise<boolean> {
     // Lock all collections by using a special global lock
     return this._withLock("__global__", async () => {
-      // Clear MongoDB collections if using MongoDB
-      if (this.config.mode !== 'json' && this.isConnected && this.mongodb) {
-        try {
-          const collections = await this.mongodb.listCollections().toArray();
-          for (const collection of collections) {
-            await this.mongodb.collection(collection.name).deleteMany({});
-          }
-        } catch (error) {
-          console.warn('Failed to clear MongoDB collections:', error);
-        }
+      const files = await fsp.readdir(this.basePath);
+      const jsonFiles = files.filter(f => f.endsWith(".json"));
+      for (const file of jsonFiles) {
+        await fsp.unlink(path.join(this.basePath, file)).catch(() => {});
       }
-
-      // Clear JSON files if using JSON storage
-      if (this.config.mode !== 'mongodb') {
-        const files = await fsp.readdir(this.basePath);
-        const jsonFiles = files.filter(f => f.endsWith(".json"));
-        for (const file of jsonFiles) {
-          await fsp.unlink(path.join(this.basePath, file)).catch(() => {});
-        }
-      }
-
-      this.cache.clear();
+      this.clearAllCaches();
       return true;
     });
   }
 
   public deleteAllSync(): boolean {
-    // Sync operations only work with JSON files
-    if (this.config.mode !== 'mongodb') {
-      const files = fs.readdirSync(this.basePath);
-      const jsonFiles = files.filter(f => f.endsWith(".json"));
-      for (const file of jsonFiles) {
-        try {
-          fs.unlinkSync(path.join(this.basePath, file));
-        } catch {}
-      }
-    }
-    this.cache.clear();
-    return true;
-  }
-
-  // -------- MongoDB Specific Methods --------
-  public async migrateToMongoDB(collections?: string[]): Promise<void> {
-    if (!this.isConnected) {
-      throw new Error('MongoDB not connected');
-    }
-
-    const files = await fsp.readdir(this.basePath);
+    const files = fs.readdirSync(this.basePath);
     const jsonFiles = files.filter(f => f.endsWith(".json"));
-    
     for (const file of jsonFiles) {
-      const collectionName = path.basename(file, '.json');
-      
-      if (collections && !collections.includes(collectionName)) {
-        continue; // Skip if specific collections requested and this isn't one
-      }
-
       try {
-        const raw = await fsp.readFile(path.join(this.basePath, file), "utf-8");
-        const data = raw && raw !== "null" ? JSON.parse(raw) : null;
-        
-        if (data) {
-          await this._saveToMongo(collectionName, data);
-          console.log(`Migrated ${collectionName} to MongoDB`);
-        }
-      } catch (error) {
-        console.error(`Failed to migrate ${collectionName}:`, error);
-      }
+        fs.unlinkSync(path.join(this.basePath, file));
+      } catch {}
     }
-  }
-
-  public async migrateToJSON(collections?: string[]): Promise<void> {
-    if (!this.isConnected) {
-      throw new Error('MongoDB not connected');
-    }
-
-    const mongoCollections = await this.mongodb!.listCollections().toArray();
-    
-    for (const collection of mongoCollections) {
-      if (collections && !collections.includes(collection.name)) {
-        continue; // Skip if specific collections requested and this isn't one
-      }
-
-      try {
-        const data = await this._loadFromMongo(collection.name);
-        await fsp.writeFile(
-          this._getFilePath(collection.name),
-          JSON.stringify(data, null, 2),
-          "utf-8"
-        );
-        console.log(`Migrated ${collection.name} to JSON`);
-      } catch (error) {
-        console.error(`Failed to migrate ${collection.name}:`, error);
-      }
-    }
-  }
-
-  public getConfig(): DatabaseConfig {
-    return { ...this.config };
-  }
-
-  public isMongoConnected(): boolean {
-    return this.isConnected;
+    this.clearAllCaches();
+    return true;
   }
 
   // -------- Collection Factory --------
@@ -726,38 +549,22 @@ export class JsonDB {
 
       delete: async (): Promise<boolean> => {
         return self._withLock(name, async () => {
-          // Delete from MongoDB if using it
-          if (self._shouldUseMongoDB(name) && self.isConnected && self.mongodb) {
-            try {
-              await self.mongodb.collection(name).drop();
-            } catch (error) {
-              // Collection might not exist, ignore error
-            }
-          }
-          
-          // Delete JSON file if exists
-          if (self.config.mode !== 'mongodb') {
-            const filePath = path.join(self.basePath, `${name}.json`);
-            await fsp.unlink(filePath).catch(() => {});
-          }
-          
+          const filePath = path.join(self.basePath, `${name}.json`);
+          await fsp.unlink(filePath).catch(() => {});
           if (useCache) {
-            self.cache.delete(name);
+            self.invalidateCache(name);
           }
           return true;
         });
       },
 
       deleteSync: (): boolean => {
-        // Sync operations only work with JSON files
-        if (self.config.mode !== 'mongodb') {
-          const filePath = path.join(self.basePath, `${name}.json`);
-          try {
-            fs.unlinkSync(filePath);
-          } catch {}
-        }
+        const filePath = path.join(self.basePath, `${name}.json`);
+        try {
+          fs.unlinkSync(filePath);
+        } catch {}
         if (useCache) {
-          self.cache.delete(name);
+          self.invalidateCache(name);
         }
         return true;
       },
