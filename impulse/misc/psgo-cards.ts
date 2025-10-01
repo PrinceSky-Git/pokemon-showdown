@@ -591,6 +591,48 @@ function addRandomUserPackSync(userid: string): { success: boolean; packName?: s
 
 Impulse.addRandomUserPackSync = addRandomUserPackSync;
 
+async function randomGiveCard(userid: string): Promise<boolean> {
+    const allCards = await getAllCards();
+    const availableCards = Object.keys(allCards);
+    
+    if (availableCards.length === 0) {
+        return false;
+    }
+    
+    const randomCardId = availableCards[Math.floor(Math.random() * availableCards.length)];
+    const card = allCards[randomCardId];
+    
+    if (!card) return false;
+    
+    const cardInstance: CardInstance = { ...card, obtainedAt: Date.now() };
+    await userCards.pushIn(userid, cardInstance);
+    return true;
+}
+
+Impulse.randomGiveCard = randomGiveCard;
+
+async function addRandomUserPack(userid: string): Promise<{ success: boolean; packName?: string }> {
+    const allPacks = await getAllPacks();
+    const availablePacks = Object.keys(allPacks);
+    
+    if (availablePacks.length === 0) {
+        return { success: false };
+    }
+    
+    const randomPack = availablePacks[Math.floor(Math.random() * availablePacks.length)];
+    const packInfo = allPacks[randomPack];
+    
+    await userPacks.pushIn(userid, randomPack);
+    
+    return {
+        success: true,
+        packName: packInfo ? packInfo.name : randomPack
+    };
+}
+
+Impulse.addRandomUserPack = addRandomUserPack;
+
+
 async function removeUserPack(userid: string, pack: string): Promise<boolean> {
     const packs = await getUserPacks(userid);
     const idx = packs.indexOf(pack);
