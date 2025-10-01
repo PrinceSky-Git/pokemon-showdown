@@ -1,21 +1,24 @@
 /*
 * Pokemon Showdown
-* Music Playlist
+* Music Playlist - Refactored with Atomic Operations
 * @author ClarkJ338
 * @license MIT
 */
 
-
 import { Utils } from '../../lib';
+import { MongoDB } from '../../impulse/mongodb_module';
 
 interface PlaylistEntry {
   url: string;
   title: string;
   type: 'youtube' | 'youtube-music' | 'spotify' | 'apple-music' | 'soundcloud';
+  addedAt: number;
 }
 
-interface PlaylistData {
-  [userid: string]: PlaylistEntry[];
+interface PlaylistDocument {
+  _id: string; // userid
+  songs: PlaylistEntry[];
+  lastUpdated: Date;
 }
 
 interface RateLimitData {
@@ -25,68 +28,85 @@ interface RateLimitData {
   };
 }
 
+// Get typed MongoDB collection
+const PlaylistDB = MongoDB<PlaylistDocument>('playlists');
+
 export class MusicPlaylist {
-  private static playlists: PlaylistData = {};
   private static rateLimits: RateLimitData = {};
   private static readonly MAX_PLAYLIST_SIZE = 20;
   private static readonly RATE_LIMIT_REQUESTS = 10;
   private static readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
 
-  private static loadPlaylists(): void {
-    try {
-      const data = DB.playlistData.get() as PlaylistData;
-      if (data && typeof data === 'object') {
-        this.playlists = data;
-      }
-    } catch (error) {
-      console.error(`Error reading playlist data: ${error}`);
-    }
-  }
-
-  private static savePlaylists(): void {
-    try {
-      // Save the entire playlists object, replacing existing data
-      DB.playlistData.insert(this.playlists);
-    } catch (error) {
-      console.error(`Error saving playlist data: ${error}`);
-    }
-  }
-
-  static addSong(userid: string, url: string, title: string, type: PlaylistEntry['type']): {success: boolean, error?: string} {
+  static async addSong(userid: string, url: string, title: string, type: PlaylistEntry['type']): Promise<{success: boolean, error?: string}> {
     const id = toID(userid);
-    if (!this.playlists[id]) {
-      this.playlists[id] = [];
-    }
+    
+    // Get current playlist
+    const doc = await PlaylistDB.findById(id);
+    const currentSongs = doc?.songs || [];
 
     // Check playlist size limit
-    if (this.playlists[id].length >= this.MAX_PLAYLIST_SIZE) {
+    if (currentSongs.length >= this.MAX_PLAYLIST_SIZE) {
       return {success: false, error: `Playlist limit reached (${this.MAX_PLAYLIST_SIZE} songs maximum)`};
     }
 
     // Check for duplicate URL
-    const isDuplicate = this.playlists[id].some(entry => entry.url === url);
+    const isDuplicate = currentSongs.some(entry => entry.url === url);
     if (isDuplicate) {
       return {success: false, error: "This URL is already in your playlist"};
     }
 
-    this.playlists[id].push({ url, title, type });
-    this.savePlaylists();
+    const newSong: PlaylistEntry = {
+      url,
+      title,
+      type,
+      addedAt: Date.now()
+    };
+
+    // Use atomic $push to add song
+    await PlaylistDB.findOneAndUpdate(
+      { _id: id },
+      { 
+        $push: { songs: newSong },
+        $set: { lastUpdated: new Date() },
+        $setOnInsert: { _id: id }
+      },
+      { upsert: true }
+    );
+
     return {success: true};
   }
 
-  static removeSong(userid: string, index: number): boolean {
+  static async removeSong(userid: string, index: number): Promise<boolean> {
     const id = toID(userid);
-    if (!this.playlists[id] || index < 1 || index > this.playlists[id].length) {
+    
+    // Get current playlist
+    const doc = await PlaylistDB.findById(id);
+    if (!doc || !doc.songs || index < 1 || index > doc.songs.length) {
       return false;
     }
-    this.playlists[id].splice(index - 1, 1);
-    this.savePlaylists();
+
+    // Create new array without the removed song
+    const newSongs = [...doc.songs];
+    newSongs.splice(index - 1, 1);
+
+    // Use atomic update to replace songs array
+    await PlaylistDB.updateOne(
+      { _id: id },
+      { 
+        $set: { 
+          songs: newSongs,
+          lastUpdated: new Date()
+        }
+      }
+    );
+
     return true;
   }
 
-  static getPlaylist(userid: string): PlaylistEntry[] {
+  static async getPlaylist(userid: string): Promise<PlaylistEntry[]> {
     const id = toID(userid);
-    return this.playlists[id] || [];
+    const doc = await PlaylistDB.findById(id);
+    return doc?.songs || [];
   }
 
   static checkRateLimit(userid: string): boolean {
@@ -111,16 +131,145 @@ export class MusicPlaylist {
     return true;
   }
 
-  static clearPlaylist(userid: string): void {
+  static async clearPlaylist(userid: string): Promise<void> {
     const id = toID(userid);
-    if (this.playlists[id]) {
-      delete this.playlists[id]; // Remove from memory
-      try {
-        DB.playlistData.remove(id); // Remove from database
-      } catch (error) {
-        console.error(`Error clearing playlist for user ${id}: ${error}`);
+    // Use atomic deleteOne to remove entire playlist
+    await PlaylistDB.deleteOne({ _id: id });
+  }
+
+  static async getPlaylistCount(userid: string): Promise<number> {
+    const id = toID(userid);
+    const doc = await PlaylistDB.findById(id);
+    return doc?.songs?.length || 0;
+  }
+
+  static async hasPlaylist(userid: string): Promise<boolean> {
+    const id = toID(userid);
+    return await PlaylistDB.exists({ _id: id });
+  }
+
+  static async removeSongByUrl(userid: string, url: string): Promise<boolean> {
+    const id = toID(userid);
+    
+    // Use atomic $pull to remove song by URL
+    const result = await PlaylistDB.updateOne(
+      { _id: id },
+      { 
+        $pull: { songs: { url } },
+        $set: { lastUpdated: new Date() }
       }
+    );
+
+    return result > 0;
+  }
+
+  static async reorderSong(userid: string, fromIndex: number, toIndex: number): Promise<boolean> {
+    const id = toID(userid);
+    const doc = await PlaylistDB.findById(id);
+    
+    if (!doc || !doc.songs || fromIndex < 1 || toIndex < 1 || 
+        fromIndex > doc.songs.length || toIndex > doc.songs.length) {
+      return false;
     }
+
+    const newSongs = [...doc.songs];
+    const [movedSong] = newSongs.splice(fromIndex - 1, 1);
+    newSongs.splice(toIndex - 1, 0, movedSong);
+
+    await PlaylistDB.updateOne(
+      { _id: id },
+      { 
+        $set: { 
+          songs: newSongs,
+          lastUpdated: new Date()
+        }
+      }
+    );
+
+    return true;
+  }
+
+  static async getTopPlaylists(limit: number = 10): Promise<{userid: string, songCount: number}[]> {
+    // Use aggregation to get users with most songs
+    const results = await PlaylistDB.aggregate([
+      {
+        $project: {
+          _id: 1,
+          songCount: { $size: { $ifNull: ["$songs", []] } }
+        }
+      },
+      { $match: { songCount: { $gt: 0 } } },
+      { $sort: { songCount: -1 } },
+      { $limit: limit }
+    ]);
+
+    return results.map(r => ({
+      userid: r._id,
+      songCount: r.songCount
+    }));
+  }
+
+  static async getAllPlaylists(): Promise<PlaylistDocument[]> {
+    // Get all playlists sorted by last updated
+    return await PlaylistDB.findSorted({}, { lastUpdated: -1 });
+  }
+
+  static async searchPlaylists(query: string): Promise<{userid: string, songs: PlaylistEntry[]}[]> {
+    // Search for playlists containing songs with titles matching query
+    const allPlaylists = await PlaylistDB.find({});
+    
+    return allPlaylists
+      .map(doc => ({
+        userid: doc._id,
+        songs: doc.songs.filter(song => 
+          song.title.toLowerCase().includes(query.toLowerCase())
+        )
+      }))
+      .filter(result => result.songs.length > 0);
+  }
+
+  static async getPlaylistsByPlatform(platform: PlaylistEntry['type']): Promise<{userid: string, count: number}[]> {
+    // Use aggregation to count songs by platform
+    const results = await PlaylistDB.aggregate([
+      { $unwind: "$songs" },
+      { $match: { "songs.type": platform } },
+      { 
+        $group: {
+          _id: "$_id",
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    return results.map(r => ({
+      userid: r._id,
+      count: r.count
+    }));
+  }
+
+  static async getTotalStats(): Promise<{totalPlaylists: number, totalSongs: number, avgSongsPerPlaylist: number}> {
+    const stats = await PlaylistDB.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalPlaylists: { $sum: 1 },
+          totalSongs: { $sum: { $size: { $ifNull: ["$songs", []] } } }
+        }
+      }
+    ]);
+
+    if (stats.length === 0) {
+      return { totalPlaylists: 0, totalSongs: 0, avgSongsPerPlaylist: 0 };
+    }
+
+    const result = stats[0];
+    return {
+      totalPlaylists: result.totalPlaylists,
+      totalSongs: result.totalSongs,
+      avgSongsPerPlaylist: result.totalPlaylists > 0 ? 
+        Math.round((result.totalSongs / result.totalPlaylists) * 10) / 10 : 0
+    };
   }
 }
 
@@ -190,14 +339,55 @@ function getYouTubeTitle(videoId: string): Promise<string> {
   });
 }
 
-MusicPlaylist.loadPlaylists();
+export const pages: Chat.PageTable = {
+  async playliststats(args, user) {
+    const stats = await MusicPlaylist.getTotalStats();
+    const topPlaylists = await MusicPlaylist.getTopPlaylists(10);
+
+    let topPlaylistsHTML = '';
+    if (topPlaylists.length > 0) {
+      topPlaylistsHTML = topPlaylists.map((p, i) => 
+        `<tr><td>${i + 1}</td><td>${Impulse.nameColor(p.userid, true, true)}</td><td>${p.songCount}</td></tr>`
+      ).join('');
+    } else {
+      topPlaylistsHTML = '<tr><td colspan="3"><em>No playlists yet</em></td></tr>';
+    }
+
+    let buf = ``;
+    buf += `<div class="pad">`;
+    buf += `<h2>Playlist Statistics</h2>`;
+    buf += `<div class="infobox">`;
+    buf += `<h3>Overall Stats</h3>`;
+    buf += `<ul>`;
+    buf += `<li><strong>Total Playlists:</strong> ${stats.totalPlaylists}</li>`;
+    buf += `<li><strong>Total Songs:</strong> ${stats.totalSongs}</li>`;
+    buf += `<li><strong>Average Songs per Playlist:</strong> ${stats.avgSongsPerPlaylist}</li>`;
+    buf += `</ul>`;
+    buf += `</div>`;
+    buf += `<h3>Top 10 Playlists</h3>`;
+    buf += `<table class="ladder" style="width: 100%;">`;
+    buf += `<thead>`;
+    buf += `<tr>`;
+    buf += `<th>Rank</th>`;
+    buf += `<th>User</th>`;
+    buf += `<th>Songs</th>`;
+    buf += `</tr>`;
+    buf += `</thead>`;
+    buf += `<tbody>`;
+    buf += topPlaylistsHTML;
+    buf += `</tbody>`;
+    buf += `</table>`;
+    buf += `</div>`;
+    return buf;
+  },
+};
 
 export const commands: Chat.ChatCommands = {
   playlist: {
-	  ''(target, room, user) {
-		  this.parse(`/playlisthelp`);
-	  },
-	  
+    ''(target, room, user) {
+      this.parse(`/playlisthelp`);
+    },
+    
     async add(target, room, user) {
       if (!target) {
         return this.errorReply("Usage: /playlist add <URL> or /playlist add <URL>, <title> for non-YouTube platforms");
@@ -234,75 +424,148 @@ export const commands: Chat.ChatCommands = {
         title = providedTitle;
       }
 
-      const result = MusicPlaylist.addSong(user.id, urlStr, title, platform.type);
+      const result = await MusicPlaylist.addSong(user.id, urlStr, title, platform.type);
       if (!result.success) {
         return this.errorReply(result.error!);
       }
 
-      this.sendReply(`Added "${title}" to your personal playlist.`);
+      const count = await MusicPlaylist.getPlaylistCount(user.id);
+      this.sendReply(`Added "${title}" to your personal playlist. (${count}/${MusicPlaylist['MAX_PLAYLIST_SIZE']})`);
     },
 
-    remove(target, room, user) {
+    async remove(target, room, user) {
       if (!target || isNaN(parseInt(target))) return this.errorReply("Usage: /playlist remove <index>");
       const index = parseInt(target);
-      const success = MusicPlaylist.removeSong(user.id, index);
+      const success = await MusicPlaylist.removeSong(user.id, index);
       if (success) {
-        this.sendReply(`Removed song at index ${index} from your personal playlist.`);
+        const count = await MusicPlaylist.getPlaylistCount(user.id);
+        this.sendReply(`Removed song at index ${index} from your personal playlist. (${count} songs remaining)`);
       } else {
         this.errorReply(`Invalid index or no playlist.`);
       }
     },
 
-    share(target, room, user) {
+    async share(target, room, user) {
       if (!this.runBroadcast()) return;
-      const playlist = MusicPlaylist.getPlaylist(user.id);
+      const playlist = await MusicPlaylist.getPlaylist(user.id);
       if (playlist.length === 0) {
         return this.sendReply(`Your personal playlist is empty.`);
       }
-      let html = `<b>Your personal playlist:</b><br />`;
+      
+      let buf = ``;
+      buf += `<b>${Utils.escapeHTML(user.name)}'s personal playlist (${playlist.length} songs):</b><br />`;
       playlist.forEach((entry, idx) => {
-        html += `${idx + 1}. <a href="${Utils.escapeHTML(entry.url)}" target="_blank">${Utils.escapeHTML(entry.title)}</a><br />`;
+        const platformIcon = this.getPlatformIcon(entry.type);
+        buf += `${idx + 1}. ${platformIcon} <a href="${Utils.escapeHTML(entry.url)}" target="_blank">${Utils.escapeHTML(entry.title)}</a><br />`;
       });
-      this.sendReplyBox(html);
+      this.sendReplyBox(buf);
     },
 
-    clear(target, room, user) {
-      MusicPlaylist.clearPlaylist(user.id);
+    async clear(target, room, user) {
+      await MusicPlaylist.clearPlaylist(user.id);
       this.sendReply(`Cleared your personal playlist.`);
     },
 
-    view(target, room, user) {
+    async view(target, room, user) {
       if (!this.runBroadcast()) return;
       if (!target) return this.errorReply("Usage: /playlist view <username>");
       const targetUser = Users.get(target);
       if (!targetUser) return this.errorReply("User not found.");
       const targetId = toID(targetUser.id);
-      const playlist = MusicPlaylist.getPlaylist(targetId);
+      const playlist = await MusicPlaylist.getPlaylist(targetId);
       if (playlist.length === 0) {
         return this.sendReply(`${targetUser.name}'s playlist is empty.`);
       }
-      let html = `<b>${Utils.escapeHTML(targetUser.name)}'s Playlist:</b><br />`;
+      
+      let buf = ``;
+      buf += `<b>${Utils.escapeHTML(targetUser.name)}'s Playlist (${playlist.length} songs):</b><br />`;
       playlist.forEach((entry, idx) => {
-        html += `${idx + 1}. <a href="${Utils.escapeHTML(entry.url)}" target="_blank">${Utils.escapeHTML(entry.title)}</a><br />`;
+        const platformIcon = this.getPlatformIcon(entry.type);
+        buf += `${idx + 1}. ${platformIcon} <a href="${Utils.escapeHTML(entry.url)}" target="_blank">${Utils.escapeHTML(entry.title)}</a><br />`;
       });
-      this.sendReplyBox(html);
+      this.sendReplyBox(buf);
+    },
+
+    async reorder(target, room, user) {
+      if (!target) return this.errorReply("Usage: /playlist reorder <from index>, <to index>");
+      const parts = target.split(',').map(p => p.trim());
+      if (parts.length !== 2) return this.errorReply("Usage: /playlist reorder <from index>, <to index>");
+      
+      const fromIndex = parseInt(parts[0]);
+      const toIndex = parseInt(parts[1]);
+      
+      if (isNaN(fromIndex) || isNaN(toIndex)) {
+        return this.errorReply("Both indexes must be numbers.");
+      }
+
+      const success = await MusicPlaylist.reorderSong(user.id, fromIndex, toIndex);
+      if (success) {
+        this.sendReply(`Moved song from position ${fromIndex} to ${toIndex}.`);
+      } else {
+        this.errorReply(`Invalid indexes or no playlist.`);
+      }
+    },
+
+    async search(target, room, user) {
+      if (!this.runBroadcast()) return;
+      if (!target) return this.errorReply("Usage: /playlist search <query>");
+      
+      const results = await MusicPlaylist.searchPlaylists(target);
+      if (results.length === 0) {
+        return this.sendReply(`No playlists found containing songs matching "${target}".`);
+      }
+
+      let buf = ``;
+      buf += `<b>Playlists containing "${Utils.escapeHTML(target)}":</b><br />`;
+      results.slice(0, 10).forEach(result => {
+        buf += `<b>${Impulse.nameColor(result.userid, true, true)}</b>: ${result.songs.length} matching song(s)<br />`;
+      });
+      if (results.length > 10) {
+        buf += `<em>...and ${results.length - 10} more</em>`;
+      }
+      this.sendReplyBox(buf);
+    },
+
+    async stats(target, room, user) {
+      if (!this.runBroadcast()) return;
+      return this.parse('/join view-playliststats');
+    },
+
+    async count(target, room, user) {
+      const count = await MusicPlaylist.getPlaylistCount(user.id);
+      this.sendReply(`You have ${count} song(s) in your playlist (max: ${MusicPlaylist['MAX_PLAYLIST_SIZE']}).`);
+    },
+
+    getPlatformIcon(type: PlaylistEntry['type']): string {
+      const icons: {[key in PlaylistEntry['type']]: string} = {
+        'youtube': '▶️',
+        'youtube-music': '🎵',
+        'spotify': '🟢',
+        'apple-music': '🍎',
+        'soundcloud': '🔊'
+      };
+      return icons[type] || '🎵';
     },
   },
 
   playlisthelp(target, room, user) {
-      if (!this.runBroadcast()) return;
-      this.sendReplyBox(
-        `<div><b><center>Music Playlist Commands</center></b><br>` +
-        `<ul>` +
-        `<li><code>/playlist add URL</code> - Add a YouTube or YouTube Music URL to your playlist (title auto-fetched).</li><br>` +
-        `<li><code>/playlist add URL, Title</code> - Add a Spotify, Apple Music, or SoundCloud URL with a custom title.</li><br>` +
-        `<li><code>/playlist remove Index</code> - Remove a song from your playlist by its position number.</li><br>` +
-        `<li><code>/playlist share</code> - Display your personal playlist to the room.</li><br>` +
-        `<li><code>/playlist view username</code> - View another user's playlist.</li><br>` +
-        `<li><code>/playlist clear</code> - Remove all songs from your playlist.</li><br>` +
-        `</ul>` +
-        `<b>Supported Platforms:</b> YouTube, YouTube Music, Spotify, Apple Music, SoundCloud<br>` +
-        `<b>Limit:</b> 20 songs per user</div>`
-      );
-    },
+    if (!this.runBroadcast()) return;
+    let buf = ``;
+    buf += `<div><b><center>Music Playlist Commands</center></b><br>`;
+    buf += `<ul>`;
+    buf += `<li><code>/playlist add URL</code> - Add a YouTube or YouTube Music URL to your playlist (title auto-fetched).</li><br>`;
+    buf += `<li><code>/playlist add URL, Title</code> - Add a Spotify, Apple Music, or SoundCloud URL with a custom title.</li><br>`;
+    buf += `<li><code>/playlist remove Index</code> - Remove a song from your playlist by its position number.</li><br>`;
+    buf += `<li><code>/playlist reorder from, to</code> - Move a song from one position to another.</li><br>`;
+    buf += `<li><code>/playlist share</code> - Display your personal playlist to the room.</li><br>`;
+    buf += `<li><code>/playlist view username</code> - View another user's playlist.</li><br>`;
+    buf += `<li><code>/playlist search query</code> - Search for playlists containing specific songs.</li><br>`;
+    buf += `<li><code>/playlist clear</code> - Remove all songs from your playlist.</li><br>`;
+    buf += `<li><code>/playlist count</code> - Check how many songs you have in your playlist.</li><br>`;
+    buf += `<li><code>/playlist stats</code> - View overall playlist statistics.</li><br>`;
+    buf += `</ul>`;
+    buf += `<b>Supported Platforms:</b> YouTube (▶️), YouTube Music (🎵), Spotify (🟢), Apple Music (🍎), SoundCloud (🔊)<br>`;
+    buf += `<b>Limit:</b> 20 songs per user</div>`;
+    this.sendReplyBox(buf);
+  },
 };
