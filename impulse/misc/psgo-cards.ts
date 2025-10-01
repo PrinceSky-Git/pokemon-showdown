@@ -1,7 +1,8 @@
 /**
  * Pokemon Showdown
  * PSGO Collectable Pokemon Cards System
- * Refactor By ClarkJ338 - Cache-Free Version
+ * Complete Implementation - Base Set (1999) to Scarlet & Violet (2025)
+ * Supports all official Pokemon TCG rarities and mechanics
  * @license MIT
  */
 
@@ -9,13 +10,63 @@
 const CARDS_PER_PACK = 10;
 const CURRENCY = Impulse.currency || 'coins';
 
-// ================ Interfaces ================
+// ================ Type Definitions ================
+
+// Complete rarity system covering all TCG eras
+type CardRarity = 
+    // Base rarities (1999-present)
+    | 'Common'
+    | 'Uncommon'
+    | 'Rare'
+    | 'Rare Holo'
+    
+    // EX Era rarities (2003-2007)
+    | 'Rare Holo EX'
+    | 'Rare Holo Star'
+    | 'Rare Holo LV.X'
+    
+    // Prime/Legend Era rarities (2009-2011)
+    | 'Rare Prime'
+    | 'Rare LEGEND'
+    
+    // BW/XY Era rarities (2011-2016)
+    | 'Rare ACE'
+    | 'Rare BREAK'
+    | 'Rare Holo GX'
+    | 'Rare Secret'
+    | 'Rare Ultra'
+    | 'Rare Rainbow'
+    
+    // Sun & Moon additions (2017-2019)
+    | 'Rare Shiny'
+    | 'Rare Shiny GX'
+    
+    // Sword & Shield Era rarities (2020-2023)
+    | 'Rare Holo V'
+    | 'Rare Holo VMAX'
+    | 'Rare Holo VSTAR'
+    | 'Amazing Rare'
+    | 'Radiant Rare'
+    | 'Trainer Gallery Rare Holo'
+    
+    // Scarlet & Violet Era rarities (2023-present)
+    | 'Illustration Rare'
+    | 'Special Illustration Rare'
+    | 'Hyper Rare'
+    | 'Ultra Rare'
+    | 'Double Rare'
+    
+    // Special/Promo rarities
+    | 'Promo'
+    | 'Rare Shining'
+    | 'Classic';
+
 interface Card {
     id: string;
     name: string;
     nameId: string;
     image: string;
-    rarity: string;
+    rarity: CardRarity;
     set: string;
     setId: string;
     cardNumber: string;
@@ -40,8 +91,6 @@ interface UserSettings {
     transfersEnabled?: boolean;
     showcaseSort?: 'rarity' | 'points' | 'types' | 'name' | 'date';
 }
-
-type CardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Ultra Rare' | 'Legendary' | 'Mythic';
 
 // ================ Database Collections ================
 const userCards = DB.userCards;
@@ -74,45 +123,157 @@ function getAllPacksSync(): Record<string, PackDefinition> {
 }
 
 async function saveAllCards(cards: Record<string, Card>): Promise<void> {
-    await cardDefinitions.clear(true); // Clear as object
+    await cardDefinitions.clear(true);
     await cardDefinitions.insert(cards);
 }
 
 async function saveAllPacks(packs: Record<string, PackDefinition>): Promise<void> {
-    await packDefinitions.clear(true); // Clear as object
+    await packDefinitions.clear(true);
     await packDefinitions.insert(packs);
 }
 
-// ================ Constants ================
+// ================ Rarity & Point System ================
+
 const RARITY_POINTS: Record<CardRarity, number> = {
-    Common: 1, Uncommon: 3, Rare: 6, 'Ultra Rare': 10, Legendary: 15, Mythic: 20,
+    // Common tier (1 point)
+    'Common': 1,
+    
+    // Uncommon tier (3 points)
+    'Uncommon': 3,
+    
+    // Rare tier (5-6 points)
+    'Rare': 5,
+    'Rare Holo': 6,
+    'Promo': 5,
+    
+    // Special Rare tier (7-8 points)
+    'Rare ACE': 7,
+    'Rare BREAK': 7,
+    'Rare Prime': 8,
+    
+    // EX/GX tier (9-11 points)
+    'Rare Holo EX': 9,
+    'Rare Holo GX': 10,
+    'Rare Holo LV.X': 9,
+    
+    // V/VMAX tier (10-12 points)
+    'Rare Holo V': 10,
+    'Rare Holo VMAX': 12,
+    'Rare Holo VSTAR': 12,
+    'Double Rare': 10,
+    
+    // Ultra Rare tier (13-15 points)
+    'Rare Ultra': 13,
+    'Ultra Rare': 13,
+    'Rare Secret': 14,
+    'Rare Rainbow': 15,
+    
+    // Amazing/Radiant tier (16-17 points)
+    'Amazing Rare': 16,
+    'Radiant Rare': 16,
+    'Trainer Gallery Rare Holo': 15,
+    
+    // Illustration tier (17-18 points)
+    'Illustration Rare': 17,
+    'Special Illustration Rare': 18,
+    
+    // Legendary tier (19-20 points)
+    'Rare Holo Star': 19,
+    'Rare LEGEND': 19,
+    'Rare Shining': 20,
+    'Rare Shiny': 18,
+    'Rare Shiny GX': 20,
+    
+    // Hyper/Mythic tier (21-25 points)
+    'Hyper Rare': 22,
+    'Classic': 25,
 };
 
 const RARITY_COLORS: Record<CardRarity, string> = {
-    Common: '#0066ff', Uncommon: '#008000', Rare: '#cc0000', 'Ultra Rare': '#800080',
-    Legendary: '#c0c0c0', Mythic: '#998200',
+    // Common tier
+    'Common': '#6B7280',
+    
+    // Uncommon tier
+    'Uncommon': '#10B981',
+    
+    // Rare tier
+    'Rare': '#3B82F6',
+    'Rare Holo': '#6366F1',
+    'Promo': '#8B5CF6',
+    
+    // Special Rare tier
+    'Rare ACE': '#EC4899',
+    'Rare BREAK': '#F59E0B',
+    'Rare Prime': '#10B981',
+    
+    // EX/GX tier
+    'Rare Holo EX': '#F59E0B',
+    'Rare Holo GX': '#EF4444',
+    'Rare Holo LV.X': '#DC2626',
+    
+    // V/VMAX tier
+    'Rare Holo V': '#06B6D4',
+    'Rare Holo VMAX': '#8B5CF6',
+    'Rare Holo VSTAR': '#A855F7',
+    'Double Rare': '#14B8A6',
+    
+    // Ultra Rare tier
+    'Rare Ultra': '#7C3AED',
+    'Ultra Rare': '#7C3AED',
+    'Rare Secret': '#4F46E5',
+    'Rare Rainbow': '#EC4899',
+    
+    // Amazing/Radiant tier
+    'Amazing Rare': '#F59E0B',
+    'Radiant Rare': '#EAB308',
+    'Trainer Gallery Rare Holo': '#06B6D4',
+    
+    // Illustration tier
+    'Illustration Rare': '#F97316',
+    'Special Illustration Rare': '#EA580C',
+    
+    // Legendary tier
+    'Rare Holo Star': '#FFD700',
+    'Rare LEGEND': '#D97706',
+    'Rare Shining': '#C0C0C0',
+    'Rare Shiny': '#E5E7EB',
+    'Rare Shiny GX': '#F3F4F6',
+    
+    // Hyper/Mythic tier
+    'Hyper Rare': '#FF1493',
+    'Classic': '#FFD700',
 };
 
 const SPECIAL_SUBTYPES: Record<string, { color: string; glow: boolean }> = {
-    EX: { color: '#FFD700', glow: true },
-    GX: { color: '#FF6B35', glow: true },
-    V: { color: '#00D4AA', glow: true },
-    VMAX: { color: '#FF1493', glow: true },
-    VSTAR: { color: '#9932CC', glow: true },
-    ex: { color: '#FFB347', glow: true },
-    Legend: { color: '#B8860B', glow: true },
-    Prime: { color: '#32CD32', glow: true },
-    Break: { color: '#FF4500', glow: true },
-    'Tag Team': { color: '#4169E1', glow: true },
+    // +2 Point Subtypes
+    'Break': { color: '#FF4500', glow: true },
+    
+    // +3 Point Subtypes
+    'EX': { color: '#FFD700', glow: true },
+    'GX': { color: '#FF6B35', glow: true },
+    'V': { color: '#00D4AA', glow: true },
+    'ex': { color: '#FFB347', glow: true },
     'MEGA': { color: '#8B008B', glow: true },
     'LV.X': { color: '#DC143C', glow: true },
     'Radiant': { color: '#FF1493', glow: true },
     'Amazing': { color: '#FFD700', glow: true },
+    
+    // +4 Point Subtypes
+    'Legend': { color: '#B8860B', glow: true },
+    'Prime': { color: '#32CD32', glow: true },
     'Shining': { color: '#C0C0C0', glow: true },
     '★': { color: '#FFD700', glow: true },
+    
+    // +5 Point Subtypes
+    'VMAX': { color: '#FF1493', glow: true },
+    'VSTAR': { color: '#9932CC', glow: true },
+    
+    // +6 Point Subtypes
+    'Tag Team': { color: '#4169E1', glow: true },
 };
 
 // ================ Utility Functions ================
+
 function toID(text: string): string {
     return text.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -124,6 +285,55 @@ function makeCardId(setId: string, cardNumber: string): string {
 function makeCardNameId(setId: string, cardName: string): string {
     return `${setId}-${toID(cardName)}`;
 }
+
+function getSubtypeBonus(types: string): number {
+    if (!types) return 0;
+    const t = types.toUpperCase();
+    
+    // Check in order of specificity
+    if (t.includes('TAG TEAM')) return 6;
+    if (t.includes('VMAX')) return 5;
+    if (t.includes('VSTAR')) return 5;
+    if (t.includes('LEGEND')) return 4;
+    if (t.includes('PRIME')) return 4;
+    if (t.includes('SHINING')) return 4;
+    if (t.includes('★')) return 4;
+    if (t.includes('GX')) return 3;
+    if (t.includes('EX') || t.includes(' EX')) return 3;
+    if (t.includes('V ') || t.endsWith(' V')) return 3;
+    if (t.includes('MEGA') || t.startsWith('M ')) return 3;
+    if (t.includes('LV.X')) return 3;
+    if (t.includes('RADIANT')) return 3;
+    if (t.includes('AMAZING')) return 3;
+    if (t.includes('BREAK')) return 2;
+    
+    return 0;
+}
+
+function getCardPoints(card: Card): number {
+    const base = RARITY_POINTS[card.rarity] || 5;
+    return base + getSubtypeBonus(card.types);
+}
+
+function parseCardTypes(types: string): { baseTypes: string; subtype: string | null } {
+    if (!types) return { baseTypes: '', subtype: null };
+    const parts = types.split(' - ');
+    return { baseTypes: parts[0] || types, subtype: parts[1] || null };
+}
+
+function formatCardTypes(types: string): string {
+    if (!types) return 'Unknown';
+    const { baseTypes, subtype } = parseCardTypes(types);
+    if (!subtype) return baseTypes;
+    const conf = SPECIAL_SUBTYPES[subtype];
+    if (conf) {
+        const style = `color: ${conf.color}; font-weight: bold;${conf.glow ? ' text-shadow: 0 0 8px ' + conf.color + '80;' : ''}`;
+        return `${baseTypes} - <span style="${style}">${subtype}</span>`;
+    }
+    return `${baseTypes} - <span style="font-weight: bold;">${subtype}</span>`;
+}
+
+// ================ Card Lookup Functions ================
 
 async function getCardById(cardId: string): Promise<Card | null> {
     const allCards = await getAllCards();
@@ -190,41 +400,7 @@ async function isManager(userid: string): Promise<boolean> {
     return managerList.includes(userid);
 }
 
-function getSubtypeBonus(types: string): number {
-    if (!types) return 0;
-    const t = types.toUpperCase();
-    if (t.includes('VMAX') || t.includes('VSTAR')) return 5;
-    if (t.includes('TAG TEAM')) return 6;
-    if (t.includes('LEGEND') || t.includes('PRIME')) return 4;
-    if (t.includes('GX') || t.includes('EX') || t.includes('V ') || t.includes(' EX')) return 3;
-    if (t.includes('MEGA') || t.includes('LV.X') || t.includes('RADIANT') || t.includes('AMAZING')) return 3;
-    if (t.includes('BREAK')) return 2;
-    if (t.includes('SHINING') || t.includes('★')) return 4;
-    return 0;
-}
-
-function getCardPoints(card: Card): number {
-    const base = RARITY_POINTS[card.rarity as CardRarity] || 1;
-    return base + getSubtypeBonus(card.types);
-}
-
-function parseCardTypes(types: string): { baseTypes: string; subtype: string | null } {
-    if (!types) return { baseTypes: '', subtype: null };
-    const parts = types.split(' - ');
-    return { baseTypes: parts[0] || types, subtype: parts[1] || null };
-}
-
-function formatCardTypes(types: string): string {
-    if (!types) return 'Unknown';
-    const { baseTypes, subtype } = parseCardTypes(types);
-    if (!subtype) return baseTypes;
-    const conf = SPECIAL_SUBTYPES[subtype];
-    if (conf) {
-        const style = `color: ${conf.color}; font-weight: bold;${conf.glow ? ' text-shadow: 0 0 8px ' + conf.color + '80;' : ''}`;
-        return `${baseTypes} - <span style="${style}">${subtype}</span>`;
-    }
-    return `${baseTypes} - <span style="font-weight: bold;">${subtype}</span>`;
-}
+// ================ Pack Opening System ================
 
 async function makePack(setId: string): Promise<CardInstance[]> {
     const out: CardInstance[] = [];
@@ -232,18 +408,25 @@ async function makePack(setId: string): Promise<CardInstance[]> {
     const packCards = Object.values(allCards).filter(c => c.setId === setId);
     if (!packCards.length) return out;
 
-    // Separate cards by rarity
-    const cardsByRarity: Record<string, Card[]> = {
-        'Common': packCards.filter(c => c.rarity === 'Common'),
-        'Uncommon': packCards.filter(c => c.rarity === 'Uncommon'),
-        'Rare': packCards.filter(c => c.rarity === 'Rare'),
-        'Ultra Rare': packCards.filter(c => c.rarity === 'Ultra Rare'),
-        'Legendary': packCards.filter(c => c.rarity === 'Legendary'),
-        'Mythic': packCards.filter(c => c.rarity === 'Mythic'),
-    };
+    // Separate cards by rarity tier for realistic distribution
+    const cardsByRarity: Record<string, Card[]> = {};
+    
+    // Group by general rarity tiers
+    const commonTier = ['Common'];
+    const uncommonTier = ['Uncommon'];
+    const rareTier = ['Rare', 'Rare Holo'];
+    const ultraRareTier = ['Rare Holo EX', 'Rare Holo GX', 'Rare Holo V', 'Rare Holo VMAX', 'Rare Holo VSTAR', 'Rare Ultra', 'Ultra Rare', 'Double Rare'];
+    const secretRareTier = ['Rare Secret', 'Rare Rainbow', 'Amazing Rare', 'Radiant Rare', 'Illustration Rare', 'Special Illustration Rare'];
+    const mythicTier = ['Rare Holo Star', 'Rare LEGEND', 'Rare Shining', 'Rare Shiny GX', 'Hyper Rare', 'Classic'];
+    
+    cardsByRarity['Common'] = packCards.filter(c => commonTier.includes(c.rarity));
+    cardsByRarity['Uncommon'] = packCards.filter(c => uncommonTier.includes(c.rarity));
+    cardsByRarity['Rare'] = packCards.filter(c => rareTier.includes(c.rarity));
+    cardsByRarity['Ultra Rare'] = packCards.filter(c => ultraRareTier.includes(c.rarity));
+    cardsByRarity['Secret Rare'] = packCards.filter(c => secretRareTier.includes(c.rarity));
+    cardsByRarity['Mythic'] = packCards.filter(c => mythicTier.includes(c.rarity));
 
-    // Official TCG rates: 6 Commons, 3 Uncommons, 1 Rare or better
-    // Commons: 6 cards
+    // Standard pack: 6 Commons, 3 Uncommons, 1 Rare or better
     for (let i = 0; i < 6; i++) {
         if (cardsByRarity['Common'].length > 0) {
             const randomCard = cardsByRarity['Common'][Math.floor(Math.random() * cardsByRarity['Common'].length)];
@@ -251,7 +434,6 @@ async function makePack(setId: string): Promise<CardInstance[]> {
         }
     }
 
-    // Uncommons: 3 cards
     for (let i = 0; i < 3; i++) {
         if (cardsByRarity['Uncommon'].length > 0) {
             const randomCard = cardsByRarity['Uncommon'][Math.floor(Math.random() * cardsByRarity['Uncommon'].length)];
@@ -259,28 +441,28 @@ async function makePack(setId: string): Promise<CardInstance[]> {
         }
     }
 
-    // Rare slot: 1 card with weighted chances
-    // Rates: Rare 85%, Ultra Rare 10%, Legendary 4%, Mythic 1%
+    // Rare slot with weighted distribution
+    // Rare: 70%, Ultra Rare: 20%, Secret Rare: 8%, Mythic: 2%
     const rareRoll = Math.random() * 100;
-    let selectedRarity: string;
+    let selectedTier: string;
     
-    if (rareRoll < 1) { // 1%
-        selectedRarity = 'Mythic';
-    } else if (rareRoll < 5) { // 4%
-        selectedRarity = 'Legendary';
-    } else if (rareRoll < 15) { // 10%
-        selectedRarity = 'Ultra Rare';
-    } else { // 85%
-        selectedRarity = 'Rare';
+    if (rareRoll < 2) {
+        selectedTier = 'Mythic';
+    } else if (rareRoll < 10) {
+        selectedTier = 'Secret Rare';
+    } else if (rareRoll < 30) {
+        selectedTier = 'Ultra Rare';
+    } else {
+        selectedTier = 'Rare';
     }
 
-    // Try selected rarity, fall back to next available
-    const rarityFallback = ['Mythic', 'Legendary', 'Ultra Rare', 'Rare', 'Uncommon', 'Common'];
-    const startIdx = rarityFallback.indexOf(selectedRarity);
+    // Try selected tier, fall back to next available
+    const tierFallback = ['Mythic', 'Secret Rare', 'Ultra Rare', 'Rare', 'Uncommon', 'Common'];
+    const startIdx = tierFallback.indexOf(selectedTier);
     
-    for (let i = startIdx; i < rarityFallback.length; i++) {
-        if (cardsByRarity[rarityFallback[i]].length > 0) {
-            const randomCard = cardsByRarity[rarityFallback[i]][Math.floor(Math.random() * cardsByRarity[rarityFallback[i]].length)];
+    for (let i = startIdx; i < tierFallback.length; i++) {
+        if (cardsByRarity[tierFallback[i]].length > 0) {
+            const randomCard = cardsByRarity[tierFallback[i]][Math.floor(Math.random() * cardsByRarity[tierFallback[i]].length)];
             out.push({ ...randomCard, obtainedAt: Date.now() });
             break;
         }
@@ -289,7 +471,8 @@ async function makePack(setId: string): Promise<CardInstance[]> {
     return out;
 }
 
-// ================ Data Functions ================
+// ================ User Data Functions ================
+
 async function getUserCards(userid: string): Promise<CardInstance[]> {
     const cards = await userCards.getIn(userid, []);
     return cards;
@@ -352,11 +535,13 @@ async function takePackCredits(userid: string, amount: number): Promise<boolean>
     return true;
 }
 
+// ================ Display Functions ================
+
 function displayCard(card: Card): string {
     const points = getCardPoints(card);
     const formattedTypes = formatCardTypes(card.types);
     const { subtype } = parseCardTypes(card.types);
-    const rarityColor = RARITY_COLORS[card.rarity as CardRarity] || '#cc0000';
+    const rarityColor = RARITY_COLORS[card.rarity] || '#6366F1';
     
     const borderColor = (subtype && SPECIAL_SUBTYPES[subtype]) ? SPECIAL_SUBTYPES[subtype].color : rarityColor;
     const glowEffect = (subtype && SPECIAL_SUBTYPES[subtype]?.glow) ? `box-shadow: 0 0 12px ${borderColor}50;` : '';
@@ -376,7 +561,7 @@ function displayCard(card: Card): string {
         `</td>` +
         `</tr></table>` +
         `</div>`;
-}
+	}
 
 // ================ COMMANDS ================
 export const commands: Chat.Commands = {
