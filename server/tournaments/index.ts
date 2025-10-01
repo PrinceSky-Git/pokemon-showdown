@@ -1208,7 +1208,7 @@ export class Tournament extends Rooms.RoomGame<TournamentPlayer> {
 				
 					// Announce to room with different messages
 					if (isWinner) {
-						const card = Impulse.randomGiveCardSync(isWinner);
+						const card = Impulse.randomGiveCardSync(player.id);
 						if (card.success) {
 						this.room.add(`|html|<div class="broadcast-green">${player.name} won the tournament and earned <b>${rewardAmount} ${Impulse.currency}</b> + ${card.cardName} Card!</div>`);
 						}
