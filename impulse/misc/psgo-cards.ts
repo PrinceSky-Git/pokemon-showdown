@@ -390,14 +390,6 @@ async function getCardFromInput(input: string): Promise<Card | Card[] | null> {
     return byNameId.length > 0 ? (byNameId.length === 1 ? byNameId[0] : byNameId) : null;
 }
 
-function getCardFromInputSync(input: string): Card | Card[] | null {
-    if (!input || !input.includes('-')) return null;
-    const byId = getCardByIdSync(input);
-    if (byId) return byId;
-    const byNameId = getCardByNameIdSync(input);
-    return byNameId.length > 0 ? (byNameId.length === 1 ? byNameId[0] : byNameId) : null;
-}
-
 async function toPackCode(packInput: string): Promise<string> {
     const packId = toID(packInput);
     const allPacks = await getAllPacks();
