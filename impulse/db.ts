@@ -22,6 +22,8 @@ export class JsonDB {
   private basePath: string;
   private locks: Map<string, Promise<any>> = new Map();
   private queues: Map<string, PendingOperation[]> = new Map();
+  private cache: Map<string, CollectionData<any>> = new Map();
+  public cached: any;
 
   constructor(basePath: string = "./db") {
     this.basePath = basePath;
@@ -29,14 +31,25 @@ export class JsonDB {
       fs.mkdirSync(basePath, { recursive: true });
     }
 
-    return new Proxy(this, {
+    const proxy = new Proxy(this, {
       get: (target, prop: string) => {
         if (prop in target) return (target as any)[prop];
         if (typeof prop === "string") {
-          return target._makeCollection<any>(prop);
+          return target._makeCollection<any>(prop, false);
         }
       },
     });
+
+    // Create cached proxy
+    this.cached = new Proxy({} as any, {
+      get: (_, prop: string) => {
+        if (typeof prop === "string") {
+          return proxy._makeCollection<any>(prop, true);
+        }
+      },
+    });
+
+    return proxy;
   }
 
   private _getFilePath(collection: string): string {
@@ -59,32 +72,60 @@ export class JsonDB {
     }
   }
 
-  private async _load<T>(collection: string): Promise<CollectionData<T>> {
+  private async _load<T>(collection: string, useCache: boolean = false): Promise<CollectionData<T>> {
+    if (useCache && this.cache.has(collection)) {
+      return this.cache.get(collection)!;
+    }
+
     await this._ensureCollectionFile(collection);
     const raw = await fsp.readFile(this._getFilePath(collection), "utf-8");
-    return raw && raw !== "null" ? JSON.parse(raw) : null;
+    const data = raw && raw !== "null" ? JSON.parse(raw) : null;
+
+    if (useCache) {
+      this.cache.set(collection, data);
+    }
+
+    return data;
   }
 
-  private _loadSync<T>(collection: string): CollectionData<T> {
+  private _loadSync<T>(collection: string, useCache: boolean = false): CollectionData<T> {
+    if (useCache && this.cache.has(collection)) {
+      return this.cache.get(collection)!;
+    }
+
     this._ensureCollectionFileSync(collection);
     const raw = fs.readFileSync(this._getFilePath(collection), "utf-8");
-    return raw && raw !== "null" ? JSON.parse(raw) : null;
+    const data = raw && raw !== "null" ? JSON.parse(raw) : null;
+
+    if (useCache) {
+      this.cache.set(collection, data);
+    }
+
+    return data;
   }
 
-  private async _save<T>(collection: string, data: CollectionData<T>) {
+  private async _save<T>(collection: string, data: CollectionData<T>, useCache: boolean = false) {
     await fsp.writeFile(
       this._getFilePath(collection),
       JSON.stringify(data, null, 2),
       "utf-8"
     );
+
+    if (useCache) {
+      this.cache.set(collection, data);
+    }
   }
 
-  private _saveSync<T>(collection: string, data: CollectionData<T>) {
+  private _saveSync<T>(collection: string, data: CollectionData<T>, useCache: boolean = false) {
     fs.writeFileSync(
       this._getFilePath(collection),
       JSON.stringify(data, null, 2),
       "utf-8"
     );
+
+    if (useCache) {
+      this.cache.set(collection, data);
+    }
   }
 
   /**
@@ -167,6 +208,7 @@ export class JsonDB {
       for (const file of jsonFiles) {
         await fsp.unlink(path.join(this.basePath, file)).catch(() => {});
       }
+      this.cache.clear();
       return true;
     });
   }
@@ -179,17 +221,18 @@ export class JsonDB {
         fs.unlinkSync(path.join(this.basePath, file));
       } catch {}
     }
+    this.cache.clear();
     return true;
   }
 
   // -------- Collection Factory --------
-  private _makeCollection<T extends { id?: number }>(name: string) {
+  private _makeCollection<T extends { id?: number }>(name: string, useCache: boolean = false) {
     const self = this;
 
     return {
       // ----- Retrieval (Read Operations - No Locking Needed) -----
       get: async (query?: object | ((item: T) => boolean)): Promise<T[] | object> => {
-        const data = (await self._load<T>(name)) ?? [];
+        const data = (await self._load<T>(name, useCache)) ?? [];
         if (Array.isArray(data)) {
           if (typeof query === "function") return data.filter(query);
           return query ? _.filter(data, query) : data;
@@ -198,7 +241,7 @@ export class JsonDB {
       },
 
       getSync: (query?: object | ((item: T) => boolean)): T[] | object => {
-        const data = self._loadSync<T>(name) ?? [];
+        const data = self._loadSync<T>(name, useCache) ?? [];
         if (Array.isArray(data)) {
           if (typeof query === "function") return data.filter(query);
           return query ? _.filter(data, query) : data;
@@ -235,7 +278,7 @@ export class JsonDB {
       },
 
       has: async (idOrKey: number | string): Promise<boolean> => {
-        const data: any = await self._load<T>(name);
+        const data: any = await self._load<T>(name, useCache);
         if (!data) return false;
 
         if (Array.isArray(data) && typeof idOrKey === "number") {
@@ -245,7 +288,7 @@ export class JsonDB {
       },
 
       hasSync: (idOrKey: number | string): boolean => {
-        const data: any = self._loadSync<T>(name);
+        const data: any = self._loadSync<T>(name, useCache);
         if (!data) return false;
 
         if (Array.isArray(data) && typeof idOrKey === "number") {
@@ -267,7 +310,7 @@ export class JsonDB {
       // ----- Modification (Write Operations with Locking) -----
       insert: async (item: T | Record<string, any>, value?: any): Promise<any> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
 
           if (!data) {
             if (typeof item === "string" && value !== undefined) {
@@ -279,7 +322,7 @@ export class JsonDB {
 
           if (typeof item === "string" && value !== undefined) {
             (data as Record<string, any>)[item] = value;
-            await self._save(name, data);
+            await self._save(name, data, useCache);
             return { [item]: value };
           }
 
@@ -290,18 +333,18 @@ export class JsonDB {
               newItem.id = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
             }
             arr.push(newItem);
-            await self._save(name, arr);
+            await self._save(name, arr, useCache);
             return newItem;
           }
 
           Object.assign(data, item);
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return item;
         });
       },
 
       insertSync: (item: T | Record<string, any>, value?: any): any => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
 
         if (!data) {
           if (typeof item === "string" && value !== undefined) {
@@ -313,7 +356,7 @@ export class JsonDB {
 
         if (typeof item === "string" && value !== undefined) {
           (data as Record<string, any>)[item] = value;
-          self._saveSync(name, data);
+          self._saveSync(name, data, useCache);
           return { [item]: value };
         }
 
@@ -324,18 +367,18 @@ export class JsonDB {
             newItem.id = arr.length ? (_.maxBy(arr, "id")?.id || 0) + 1 : 1;
           }
           arr.push(newItem);
-          self._saveSync(name, arr);
+          self._saveSync(name, arr, useCache);
           return newItem;
         }
 
         Object.assign(data, item);
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return item;
       },
 
       update: async (idOrKey: number | string, newData: Partial<T> | any): Promise<T | any | null> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) return null;
 
           if (Array.isArray(data)) {
@@ -343,12 +386,12 @@ export class JsonDB {
             const index = _.findIndex(arr, { id: idOrKey });
             if (index === -1) return null;
             arr[index] = _.merge(arr[index], newData);
-            await self._save(name, arr);
+            await self._save(name, arr, useCache);
             return arr[index];
           } else {
             if (_.has(data, idOrKey)) {
               _.set(data, idOrKey, _.merge(_.get(data, idOrKey), newData));
-              await self._save(name, data);
+              await self._save(name, data, useCache);
               return _.get(data, idOrKey);
             }
             return null;
@@ -357,7 +400,7 @@ export class JsonDB {
       },
 
       updateSync: (idOrKey: number | string, newData: Partial<T> | any): T | any | null => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) return null;
 
         if (Array.isArray(data)) {
@@ -365,12 +408,12 @@ export class JsonDB {
           const index = _.findIndex(arr, { id: idOrKey });
           if (index === -1) return null;
           arr[index] = _.merge(arr[index], newData);
-          self._saveSync(name, arr);
+          self._saveSync(name, arr, useCache);
           return arr[index];
         } else {
           if (_.has(data, idOrKey)) {
             _.set(data, idOrKey, _.merge(_.get(data, idOrKey), newData));
-            self._saveSync(name, data);
+            self._saveSync(name, data, useCache);
             return _.get(data, idOrKey);
           }
           return null;
@@ -379,18 +422,18 @@ export class JsonDB {
 
       remove: async (idOrKey: number | string): Promise<boolean> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) return false;
 
           if (Array.isArray(data)) {
             const arr = data as T[];
             const newData = _.reject(arr, { id: idOrKey });
-            await self._save(name, newData);
+            await self._save(name, newData, useCache);
             return arr.length !== newData.length;
           } else {
             if (_.has(data, idOrKey)) {
               _.unset(data, idOrKey);
-              await self._save(name, data);
+              await self._save(name, data, useCache);
               return true;
             }
             return false;
@@ -399,18 +442,18 @@ export class JsonDB {
       },
 
       removeSync: (idOrKey: number | string): boolean => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) return false;
 
         if (Array.isArray(data)) {
           const arr = data as T[];
           const newData = _.reject(arr, { id: idOrKey });
-          self._saveSync(name, newData);
+          self._saveSync(name, newData, useCache);
           return arr.length !== newData.length;
         } else {
           if (_.has(data, idOrKey)) {
             _.unset(data, idOrKey);
-            self._saveSync(name, data);
+            self._saveSync(name, data, useCache);
             return true;
           }
           return false;
@@ -447,13 +490,13 @@ export class JsonDB {
 
       clear: async (asObject = false): Promise<boolean> => {
         return self._withLock(name, async () => {
-          await self._save(name, asObject ? {} : []);
+          await self._save(name, asObject ? {} : [], useCache);
           return true;
         });
       },
 
       clearSync: (asObject = false): boolean => {
-        self._saveSync(name, asObject ? {} : []);
+        self._saveSync(name, asObject ? {} : [], useCache);
         return true;
       },
 
@@ -461,6 +504,9 @@ export class JsonDB {
         return self._withLock(name, async () => {
           const filePath = path.join(self.basePath, `${name}.json`);
           await fsp.unlink(filePath).catch(() => {});
+          if (useCache) {
+            self.cache.delete(name);
+          }
           return true;
         });
       },
@@ -470,13 +516,16 @@ export class JsonDB {
         try {
           fs.unlinkSync(filePath);
         } catch {}
+        if (useCache) {
+          self.cache.delete(name);
+        }
         return true;
       },
 
       // ----- Batch Operations (Write with Locking) -----
       bulkInsert: async (items: T[] | Record<string, any>[]): Promise<any[]> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
 
           if (!data) {
             data = Array.isArray(items) && typeof items[0] === "object" && "id" in items[0] ? [] : {};
@@ -490,19 +539,19 @@ export class JsonDB {
               arr.push(item);
               return item;
             });
-            await self._save(name, arr);
+            await self._save(name, arr, useCache);
             return inserted;
           } else {
             const obj = data as Record<string, any>;
             (items as Record<string, any>[]).forEach(item => Object.assign(obj, item));
-            await self._save(name, obj);
+            await self._save(name, obj, useCache);
             return items;
           }
         });
       },
 
       bulkInsertSync: (items: T[] | Record<string, any>[]): any[] => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
 
         if (!data) {
           data = Array.isArray(items) && typeof items[0] === "object" && "id" in items[0] ? [] : {};
@@ -516,12 +565,12 @@ export class JsonDB {
             arr.push(item);
             return item;
           });
-          self._saveSync(name, arr);
+          self._saveSync(name, arr, useCache);
           return inserted;
         } else {
           const obj = data as Record<string, any>;
           (items as Record<string, any>[]).forEach(item => Object.assign(obj, item));
-          self._saveSync(name, obj);
+          self._saveSync(name, obj, useCache);
           return items;
         }
       },
@@ -529,7 +578,7 @@ export class JsonDB {
       // Bulk update multiple records by ID
       bulkUpdate: async (updates: Array<{ id: number | string; data: Partial<T> }>): Promise<(T | null)[]> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) return updates.map(() => null);
 
           const results: (T | null)[] = [];
@@ -557,13 +606,13 @@ export class JsonDB {
             });
           }
 
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return results;
         });
       },
 
       bulkUpdateSync: (updates: Array<{ id: number | string; data: Partial<T> }>): (T | null)[] => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) return updates.map(() => null);
 
         const results: (T | null)[] = [];
@@ -591,14 +640,14 @@ export class JsonDB {
           });
         }
 
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return results;
       },
 
       // Bulk remove multiple records by ID
       bulkRemove: async (ids: (number | string)[]): Promise<boolean[]> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) return ids.map(() => false);
 
           const results: boolean[] = [];
@@ -623,13 +672,13 @@ export class JsonDB {
             });
           }
 
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return results;
         });
       },
 
       bulkRemoveSync: (ids: (number | string)[]): boolean[] => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) return ids.map(() => false);
 
         const results: boolean[] = [];
@@ -653,7 +702,7 @@ export class JsonDB {
           });
         }
 
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return results;
       },
 
@@ -661,7 +710,7 @@ export class JsonDB {
       bulkUpsert: async (items: Array<{ query: any; data: Partial<T> }>): Promise<T[]> => {
         return self._withLock(name, async () => {
           const results: T[] = [];
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           
           if (!data) {
             data = [];
@@ -699,14 +748,14 @@ export class JsonDB {
             }
           }
 
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return results;
         });
       },
 
       bulkUpsertSync: (items: Array<{ query: any; data: Partial<T> }>): T[] => {
         const results: T[] = [];
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         
         if (!data) {
           data = [];
@@ -744,125 +793,125 @@ export class JsonDB {
           }
         }
 
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return results;
       },
 
       // ----- Utilities (Read Operations - No Locking Needed) -----
       keys: async (): Promise<(string | number)[]> => {
-        const data = await self._load<T>(name);
+        const data = await self._load<T>(name, useCache);
         return Array.isArray(data) ? data.map((r: any) => r.id) : Object.keys(data ?? {});
       },
 
       keysSync: (): (string | number)[] => {
-        const data = self._loadSync<T>(name);
+        const data = self._loadSync<T>(name, useCache);
         return Array.isArray(data) ? data.map((r: any) => r.id) : Object.keys(data ?? {});
       },
 
       values: async (): Promise<T[] | any> => {
-        return (await self._load<T>(name)) ?? [];
+        return (await self._load<T>(name, useCache)) ?? [];
       },
 
       valuesSync: (): T[] | any => {
-        return self._loadSync<T>(name) ?? [];
+        return self._loadSync<T>(name, useCache) ?? [];
       },
 
       first: async (): Promise<T | null> => {
-        const data = await self._load<T>(name);
+        const data = await self._load<T>(name, useCache);
         return Array.isArray(data) && data.length ? data[0] : null;
       },
 
       firstSync: (): T | null => {
-        const data = self._loadSync<T>(name);
+        const data = self._loadSync<T>(name, useCache);
         return Array.isArray(data) && data.length ? data[0] : null;
       },
 
       last: async (): Promise<T | null> => {
-        const data = await self._load<T>(name);
+        const data = await self._load<T>(name, useCache);
         return Array.isArray(data) && data.length ? data[data.length - 1] : null;
       },
 
       lastSync: (): T | null => {
-        const data = self._loadSync<T>(name);
+        const data = self._loadSync<T>(name, useCache);
         return Array.isArray(data) && data.length ? data[data.length - 1] : null;
       },
 
       // ----- Deep path helpers (Write Operations with Locking) -----
       getIn: async (pathStr: string, defaultValue?: any): Promise<any> => {
-        const data = await self._load<T>(name);
+        const data = await self._load<T>(name, useCache);
         return _.get(data, pathStr, defaultValue);
       },
 
       getInSync: (pathStr: string, defaultValue?: any): any => {
-        const data = self._loadSync<T>(name);
+        const data = self._loadSync<T>(name, useCache);
         return _.get(data, pathStr, defaultValue);
       },
 
       setIn: async (pathStr: string, value: any): Promise<boolean> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) data = {};
           _.set(data, pathStr, value);
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return true;
         });
       },
 
       setInSync: (pathStr: string, value: any): boolean => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) data = {};
         _.set(data, pathStr, value);
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return true;
       },
 
       mergeIn: async (pathStr: string, value: any): Promise<boolean> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) data = {};
           const current = _.get(data, pathStr, {});
           _.set(data, pathStr, _.merge(current, value));
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return true;
         });
       },
 
       mergeInSync: (pathStr: string, value: any): boolean => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) data = {};
         const current = _.get(data, pathStr, {});
         _.set(data, pathStr, _.merge(current, value));
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return true;
       },
 
       pushIn: async (pathStr: string, value: any): Promise<boolean> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) data = {};
           const arr = _.get(data, pathStr, []);
           if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
           arr.push(value);
           _.set(data, pathStr, arr);
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return true;
         });
       },
 
       pushInSync: (pathStr: string, value: any): boolean => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) data = {};
         const arr = _.get(data, pathStr, []);
         if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
         arr.push(value);
         _.set(data, pathStr, arr);
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return true;
       },
 
       pullIn: async (pathStr: string, predicate: any): Promise<any[]> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) data = {};
           const arr = _.get(data, pathStr, []);
           if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
@@ -873,13 +922,13 @@ export class JsonDB {
             return match;
           });
           _.set(data, pathStr, arr);
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return removed;
         });
       },
 
       pullInSync: (pathStr: string, predicate: any): any[] => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) data = {};
         const arr = _.get(data, pathStr, []);
         if (!Array.isArray(arr)) throw new Error(`Path ${pathStr} is not an array`);
@@ -890,51 +939,51 @@ export class JsonDB {
           return match;
         });
         _.set(data, pathStr, arr);
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return removed;
       },
 
       deleteIn: async (pathStr: string): Promise<boolean> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) return false;
           const removed = _.unset(data, pathStr);
           if (removed) {
-            await self._save(name, data);
+            await self._save(name, data, useCache);
           }
           return removed;
         });
       },
 
       deleteInSync: (pathStr: string): boolean => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) return false;
         const removed = _.unset(data, pathStr);
         if (removed) {
-          self._saveSync(name, data);
+          self._saveSync(name, data, useCache);
         }
         return removed;
       },
 
       updateIn: async (pathStr: string, updater: (value: any) => any): Promise<any> => {
         return self._withLock(name, async () => {
-          let data = await self._load<T>(name);
+          let data = await self._load<T>(name, useCache);
           if (!data) data = {};
           const current = _.get(data, pathStr);
           const updated = updater(current);
           _.set(data, pathStr, updated);
-          await self._save(name, data);
+          await self._save(name, data, useCache);
           return updated;
         });
       },
 
       updateInSync: (pathStr: string, updater: (value: any) => any): any => {
-        let data = self._loadSync<T>(name);
+        let data = self._loadSync<T>(name, useCache);
         if (!data) data = {};
         const current = _.get(data, pathStr);
         const updated = updater(current);
         _.set(data, pathStr, updated);
-        self._saveSync(name, data);
+        self._saveSync(name, data, useCache);
         return updated;
       },
     };
