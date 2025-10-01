@@ -333,6 +333,21 @@ function formatCardTypes(types: string): string {
     return `${baseTypes} - <span style="font-weight: bold;">${subtype}</span>`;
 }
 
+function getRarityTier(rarity: CardRarity): string {
+    const points = RARITY_POINTS[rarity];
+    if (points >= 22) return 'Hyper';
+    if (points >= 19) return 'Legendary';
+    if (points >= 17) return 'Illustration';
+    if (points >= 16) return 'Amazing';
+    if (points >= 13) return 'Ultra Rare';
+    if (points >= 10) return 'V Series';
+    if (points >= 9) return 'EX/GX';
+    if (points >= 7) return 'Special Rare';
+    if (points >= 5) return 'Rare';
+    if (points >= 3) return 'Uncommon';
+    return 'Common';
+}
+
 // ================ Card Lookup Functions ================
 
 async function getCardById(cardId: string): Promise<Card | null> {
@@ -414,17 +429,27 @@ async function makePack(setId: string): Promise<CardInstance[]> {
     // Group by general rarity tiers
     const commonTier = ['Common'];
     const uncommonTier = ['Uncommon'];
-    const rareTier = ['Rare', 'Rare Holo'];
-    const ultraRareTier = ['Rare Holo EX', 'Rare Holo GX', 'Rare Holo V', 'Rare Holo VMAX', 'Rare Holo VSTAR', 'Rare Ultra', 'Ultra Rare', 'Double Rare'];
-    const secretRareTier = ['Rare Secret', 'Rare Rainbow', 'Amazing Rare', 'Radiant Rare', 'Illustration Rare', 'Special Illustration Rare'];
-    const mythicTier = ['Rare Holo Star', 'Rare LEGEND', 'Rare Shining', 'Rare Shiny GX', 'Hyper Rare', 'Classic'];
+    const rareTier = ['Rare', 'Rare Holo', 'Promo'];
+    const specialRareTier = ['Rare ACE', 'Rare BREAK', 'Rare Prime'];
+    const exGxTier = ['Rare Holo EX', 'Rare Holo GX', 'Rare Holo LV.X'];
+    const vTier = ['Rare Holo V', 'Rare Holo VMAX', 'Rare Holo VSTAR', 'Double Rare'];
+    const ultraRareTier = ['Rare Ultra', 'Ultra Rare', 'Rare Secret', 'Rare Rainbow'];
+    const amazingTier = ['Amazing Rare', 'Radiant Rare', 'Trainer Gallery Rare Holo'];
+    const illustrationTier = ['Illustration Rare', 'Special Illustration Rare'];
+    const legendaryTier = ['Rare Holo Star', 'Rare LEGEND', 'Rare Shining', 'Rare Shiny', 'Rare Shiny GX'];
+    const hyperTier = ['Hyper Rare', 'Classic'];
     
     cardsByRarity['Common'] = packCards.filter(c => commonTier.includes(c.rarity));
     cardsByRarity['Uncommon'] = packCards.filter(c => uncommonTier.includes(c.rarity));
     cardsByRarity['Rare'] = packCards.filter(c => rareTier.includes(c.rarity));
+    cardsByRarity['Special Rare'] = packCards.filter(c => specialRareTier.includes(c.rarity));
+    cardsByRarity['EX/GX'] = packCards.filter(c => exGxTier.includes(c.rarity));
+    cardsByRarity['V Series'] = packCards.filter(c => vTier.includes(c.rarity));
     cardsByRarity['Ultra Rare'] = packCards.filter(c => ultraRareTier.includes(c.rarity));
-    cardsByRarity['Secret Rare'] = packCards.filter(c => secretRareTier.includes(c.rarity));
-    cardsByRarity['Mythic'] = packCards.filter(c => mythicTier.includes(c.rarity));
+    cardsByRarity['Amazing'] = packCards.filter(c => amazingTier.includes(c.rarity));
+    cardsByRarity['Illustration'] = packCards.filter(c => illustrationTier.includes(c.rarity));
+    cardsByRarity['Legendary'] = packCards.filter(c => legendaryTier.includes(c.rarity));
+    cardsByRarity['Hyper'] = packCards.filter(c => hyperTier.includes(c.rarity));
 
     // Standard pack: 6 Commons, 3 Uncommons, 1 Rare or better
     for (let i = 0; i < 6; i++) {
@@ -442,22 +467,28 @@ async function makePack(setId: string): Promise<CardInstance[]> {
     }
 
     // Rare slot with weighted distribution
-    // Rare: 70%, Ultra Rare: 20%, Secret Rare: 8%, Mythic: 2%
+    // Rare: 65%, Special Rare: 12%, EX/GX/V: 10%, Ultra: 7%, Amazing/Illustration: 3%, Legendary: 2%, Hyper: 1%
     const rareRoll = Math.random() * 100;
     let selectedTier: string;
     
-    if (rareRoll < 2) {
-        selectedTier = 'Mythic';
-    } else if (rareRoll < 10) {
-        selectedTier = 'Secret Rare';
-    } else if (rareRoll < 30) {
+    if (rareRoll < 1) {
+        selectedTier = 'Hyper';
+    } else if (rareRoll < 3) {
+        selectedTier = 'Legendary';
+    } else if (rareRoll < 6) {
+        selectedTier = Math.random() < 0.5 ? 'Amazing' : 'Illustration';
+    } else if (rareRoll < 13) {
         selectedTier = 'Ultra Rare';
+    } else if (rareRoll < 23) {
+        selectedTier = Math.random() < 0.5 ? 'EX/GX' : 'V Series';
+    } else if (rareRoll < 35) {
+        selectedTier = 'Special Rare';
     } else {
         selectedTier = 'Rare';
     }
 
     // Try selected tier, fall back to next available
-    const tierFallback = ['Mythic', 'Secret Rare', 'Ultra Rare', 'Rare', 'Uncommon', 'Common'];
+    const tierFallback = ['Hyper', 'Legendary', 'Illustration', 'Amazing', 'Ultra Rare', 'V Series', 'EX/GX', 'Special Rare', 'Rare', 'Uncommon', 'Common'];
     const startIdx = tierFallback.indexOf(selectedTier);
     
     for (let i = startIdx; i < tierFallback.length; i++) {
@@ -561,7 +592,7 @@ function displayCard(card: Card): string {
         `</td>` +
         `</tr></table>` +
         `</div>`;
-	}
+}
 
 // ================ COMMANDS ================
 export const commands: Chat.Commands = {
