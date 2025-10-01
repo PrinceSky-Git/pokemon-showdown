@@ -32,6 +32,8 @@ exports.tournamentRewards = {
 	2: 5
 };
 
+Config.youtubeKey = '';
+
 /**
  * wsdeflate - compresses WebSocket messages
  *  Toggles use of the Sec-WebSocket-Extension permessage-deflate extension.
