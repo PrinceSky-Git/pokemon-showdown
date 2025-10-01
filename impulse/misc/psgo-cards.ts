@@ -540,12 +540,56 @@ async function addUserPack(userid: string, pack: string): Promise<void> {
     await userPacks.pushIn(userid, pack);
 }
 
-// For Tournaments
-function addUserPackSync(userid: string, pack: string): Promise<void> {
-    await userPacks.pushInSync(userid, pack);
+function randomGiveCardSync(userid: string): { success: boolean; packName?: string; cardName?: string } {
+    const allCards = getAllCardsSync();
+    const allPacks = getAllPacksSync();
+    const availableCards = Object.keys(allCards);
+    
+    if (availableCards.length === 0) {
+        return { success: false };
+    }
+    
+    const randomCardId = availableCards[Math.floor(Math.random() * availableCards.length)];
+    const card = allCards[randomCardId];
+    
+    if (!card) return { success: false };
+    
+    const cardInstance: CardInstance = { ...card, obtainedAt: Date.now() };
+    userCards.pushInSync(userid, cardInstance);
+    
+    // Get pack name
+    const packInfo = allPacks[card.setId];
+    const packName = packInfo ? packInfo.name : card.set;
+    
+    return { 
+        success: true, 
+        packName: packName,
+        cardName: card.name 
+    };
 }
 
-Impulse.addUserPackSync = addUserPackSync;
+Impulse.randomGiveCardSync = randomGiveCardSync;
+
+function addRandomUserPackSync(userid: string): { success: boolean; packName?: string } {
+    const allPacks = getAllPacksSync();
+    const availablePacks = Object.keys(allPacks);
+    
+    if (availablePacks.length === 0) {
+        return { success: false };
+    }
+    
+    const randomPack = availablePacks[Math.floor(Math.random() * availablePacks.length)];
+    const packInfo = allPacks[randomPack];
+    
+    userPacks.pushInSync(userid, randomPack);
+    
+    return {
+        success: true,
+        packName: packInfo ? packInfo.name : randomPack
+    };
+}
+
+Impulse.addRandomUserPackSync = addRandomUserPackSync;
 
 async function removeUserPack(userid: string, pack: string): Promise<boolean> {
     const packs = await getUserPacks(userid);
