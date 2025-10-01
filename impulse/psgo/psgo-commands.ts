@@ -123,81 +123,81 @@ export const commands: Chat.Commands = {
 
 		// View collection
 		async collection(target, room, user) {
-			if (!this.runBroadcast()) return;
+  if (!this.runBroadcast()) return;
 
-			const [targetName, pageStr, sortStr] = target ? target.split(',').map(x => x.trim()) : [];
-			const targetUser = targetName ? toID(targetName) : user.id;
-			const page = parseInt(pageStr) || 1;
-			const cardsPerPage = 100;
+  const [targetName, pageStr, sortStr] = target ? target.split(',').map(x => x.trim()) : [];
+  const targetUser = targetName ? toID(targetName) : user.id;
+  const page = parseInt(pageStr) || 1;
+  const cardsPerPage = 100;
 
-			const cards = await PSGOStorage.getUserCards(targetUser);
-			if (!cards.length) {
-				return this.sendReplyBox(`${formatUserName(targetUser, true, true)} has no cards.`);
-			}
+  const cards = await PSGOStorage.getUserCards(targetUser);
+  if (!cards.length) {
+    return this.sendReplyBox(`` + formatUserName(targetUser, true, true) + ` has no cards.`);
+  }
 
-			const settings = await PSGOStorage.getUserSettings(user.id);
-			const sortType = sortStr || settings?.showcaseSort || 'rarity';
+  const settings = await PSGOStorage.getUserSettings(user.id);
+  const sortType = sortStr || settings?.showcaseSort || 'rarity';
 
-			// Sort cards
-			const sortedCards = [...cards];
-			switch (sortType) {
-				case 'points':
-					sortedCards.sort((a, b) => PSGOCardManager.getCardPoints(b) - PSGOCardManager.getCardPoints(a));
-					break;
-				case 'types':
-					sortedCards.sort((a, b) => PSGOCardManager.formatCardTypes(a).localeCompare(PSGOCardManager.formatCardTypes(b)));
-					break;
-				case 'name':
-					sortedCards.sort((a, b) => a.name.localeCompare(b.name));
-					break;
-				case 'date':
-					sortedCards.sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0));
-					break;
-				default:
-					const rarityOrder = ['Ultra Rare', 'Secret Rare', 'Rare Holo', 'Rare', 'Uncommon', 'Common'];
-					sortedCards.sort((a, b) => {
-						const aIdx = rarityOrder.indexOf(a.rarity);
-						const bIdx = rarityOrder.indexOf(b.rarity);
-						return aIdx - bIdx;
-					});
-			}
+  // Sort cards
+  const sortedCards = [...cards];
+  switch (sortType) {
+    case 'points':
+      sortedCards.sort((a, b) => PSGOCardManager.getCardPoints(b) - PSGOCardManager.getCardPoints(a));
+      break;
+    case 'types':
+      sortedCards.sort((a, b) => PSGOCardManager.formatCardTypes(a).localeCompare(PSGOCardManager.formatCardTypes(b)));
+      break;
+    case 'name':
+      sortedCards.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case 'date':
+      sortedCards.sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0));
+      break;
+    default:
+      const rarityOrder = ['Ultra Rare', 'Secret Rare', 'Rare Holo', 'Rare', 'Uncommon', 'Common'];
+      sortedCards.sort((a, b) => {
+        const aIdx = rarityOrder.indexOf(a.rarity);
+        const bIdx = rarityOrder.indexOf(b.rarity);
+        return aIdx - bIdx;
+      });
+  }
 
-			const broadcasting = this.broadcasting;
-			const startIdx = (page - 1) * cardsPerPage;
-			const endIdx = Math.min(startIdx + cardsPerPage, sortedCards.length);
-			const totalPages = Math.ceil(sortedCards.length / cardsPerPage);
+  const broadcasting = this.broadcasting;
+  const startIdx = (page - 1) * cardsPerPage;
+  const endIdx = Math.min(startIdx + cardsPerPage, sortedCards.length);
+  const totalPages = Math.ceil(sortedCards.length / cardsPerPage);
 
-			const displayCards = broadcasting ? sortedCards.slice(0, cardsPerPage) : sortedCards.slice(startIdx, endIdx);
+  const displayCards = broadcasting ? sortedCards.slice(0, cardsPerPage) : sortedCards.slice(startIdx, endIdx);
 
-			const cardsHTML = displayCards.map(card => {
-				const hasSpecialSubtype = card.subtypes?.some(st => SPECIAL_SUBTYPES[st]);
-				const buttonStyle = hasSpecialSubtype && card.subtypes ? 
-					`padding: 0; border: 2px solid ${SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color}; box-shadow: 0 0 8px ${SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color}40;` : 
-					'padding: 0;';
-				return `<button class="button" name="send" value="/psgo show ${card.id}" style="margin: 2px; ${buttonStyle}"><img src="${card.images.small}" height="120" width="100" title="${card.name}"></button>`;
-			}).join('');
+  const cardsHTML = displayCards.map(card => {
+    const hasSpecialSubtype = card.subtypes?.some(st => SPECIAL_SUBTYPES[st]);
+    const buttonStyle = hasSpecialSubtype && card.subtypes ? 
+      `padding: 0; border: 2px solid ` + SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color + `; box-shadow: 0 0 8px ` + SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color + `40;` : 
+      'padding: 0;';
+    return `<button class="button" name="send" value="/psgo show ` + card.id + `" style="margin: 2px; ` + buttonStyle + `"><img src="` + card.images.small + `" height="120" width="100" title="` + card.name + `"></button>`;
+  }).join('');
 
-			let pagination = '';
-			if (!broadcasting && totalPages > 1) {
-				pagination = `<div style="text-align: center; margin-top: 10px;">`;
-				if (page > 1) {
-					pagination += `<button class="button" name="send" value="/psgo collection ${targetUser}, ${page - 1}">Previous</button> `;
-				}
-				pagination += `Page ${page} of ${totalPages}`;
-				if (page < totalPages) {
-					pagination += ` <button class="button" name="send" value="/psgo collection ${targetUser}, ${page + 1}">Next</button>`;
-				}
-				pagination += `</div>`;
-			}
+  let pagination = ``;
+  if (!broadcasting && totalPages > 1) {
+    pagination = `<div style="text-align: center; margin-top: 10px;">`;
+    if (page > 1) {
+      pagination += `<button class="button" name="send" value="/psgo collection ` + targetUser + `, ` + (page - 1) + `">Previous</button> `;
+    }
+    pagination += `Page ` + page + ` of ` + totalPages;
+    if (page < totalPages) {
+      pagination += ` <button class="button" name="send" value="/psgo collection ` + targetUser + `, ` + (page + 1) + `">Next</button>`;
+    }
+    pagination += `</div>`;
+  }
 
-			return this.sendReplyBox(`
-				<div style="max-height: 300px; overflow-y: auto;">${cardsHTML}</div>
-				${pagination}
-				<div style="text-align: center; margin-top: 10px; font-weight: bold;">
-					${formatUserName(targetUser, true, true)} has ${cards.length} card${cards.length === 1 ? '' : 's'} | Sort: ${sortType}
-				</div>
-			`);
-		},
+  return this.sendReplyBox(`` +
+    `<div style="max-height: 300px; overflow-y: auto;">` + cardsHTML + `</div>` +
+    `` + pagination +
+    `<div style="text-align: center; margin-top: 10px; font-weight: bold;">` +
+      `` + formatUserName(targetUser, true, true) + ` has ` + cards.length + ` card` + (cards.length === 1 ? `` : `s`) + ` | Sort: ` + sortType +
+    `</div>` +
+  ``);
+},
 		collectionhelp: `/psgo collection [user, page, sort] - View card collection`,
 
 		// Points leaderboard
@@ -261,7 +261,7 @@ export const commands: Chat.Commands = {
 				pack.series
 			]);
 
-			const tableHTML = generateTable('Pack Shop', ['Pack', 'Price', 'Series'], data);
+			const tableHTML = Impulse.generateTable('Pack Shop', ['Pack', 'Price', 'Series'], data);
 			return this.sendReplyBox(tableHTML);
 		},
 		shophelp: `/psgo shop - View pack shop`,
