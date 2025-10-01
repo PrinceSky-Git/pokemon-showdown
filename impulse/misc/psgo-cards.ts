@@ -540,99 +540,6 @@ async function addUserPack(userid: string, pack: string): Promise<void> {
     await userPacks.pushIn(userid, pack);
 }
 
-function randomGiveCardSync(userid: string): { success: boolean; packName?: string; cardName?: string } {
-    const allCards = getAllCardsSync();
-    const allPacks = getAllPacksSync();
-    const availableCards = Object.keys(allCards);
-    
-    if (availableCards.length === 0) {
-        return { success: false };
-    }
-    
-    const randomCardId = availableCards[Math.floor(Math.random() * availableCards.length)];
-    const card = allCards[randomCardId];
-    
-    if (!card) return { success: false };
-    
-    const cardInstance: CardInstance = { ...card, obtainedAt: Date.now() };
-    userCards.pushInSync(userid, cardInstance);
-    
-    // Get pack name
-    const packInfo = allPacks[card.setId];
-    const packName = packInfo ? packInfo.name : card.set;
-    
-    return { 
-        success: true, 
-        packName: packName,
-        cardName: card.name 
-    };
-}
-
-Impulse.randomGiveCardSync = randomGiveCardSync;
-
-function addRandomUserPackSync(userid: string): { success: boolean; packName?: string } {
-    const allPacks = getAllPacksSync();
-    const availablePacks = Object.keys(allPacks);
-    
-    if (availablePacks.length === 0) {
-        return { success: false };
-    }
-    
-    const randomPack = availablePacks[Math.floor(Math.random() * availablePacks.length)];
-    const packInfo = allPacks[randomPack];
-    
-    userPacks.pushInSync(userid, randomPack);
-    
-    return {
-        success: true,
-        packName: packInfo ? packInfo.name : randomPack
-    };
-}
-
-Impulse.addRandomUserPackSync = addRandomUserPackSync;
-
-async function randomGiveCard(userid: string): Promise<boolean> {
-    const allCards = await getAllCards();
-    const availableCards = Object.keys(allCards);
-    
-    if (availableCards.length === 0) {
-        return false;
-    }
-    
-    const randomCardId = availableCards[Math.floor(Math.random() * availableCards.length)];
-    const card = allCards[randomCardId];
-    
-    if (!card) return false;
-    
-    const cardInstance: CardInstance = { ...card, obtainedAt: Date.now() };
-    await userCards.pushIn(userid, cardInstance);
-    return true;
-}
-
-Impulse.randomGiveCard = randomGiveCard;
-
-async function addRandomUserPack(userid: string): Promise<{ success: boolean; packName?: string }> {
-    const allPacks = await getAllPacks();
-    const availablePacks = Object.keys(allPacks);
-    
-    if (availablePacks.length === 0) {
-        return { success: false };
-    }
-    
-    const randomPack = availablePacks[Math.floor(Math.random() * availablePacks.length)];
-    const packInfo = allPacks[randomPack];
-    
-    await userPacks.pushIn(userid, randomPack);
-    
-    return {
-        success: true,
-        packName: packInfo ? packInfo.name : randomPack
-    };
-}
-
-Impulse.addRandomUserPack = addRandomUserPack;
-
-
 async function removeUserPack(userid: string, pack: string): Promise<boolean> {
     const packs = await getUserPacks(userid);
     const idx = packs.indexOf(pack);
@@ -658,6 +565,80 @@ async function takePackCredits(userid: string, amount: number): Promise<boolean>
     await packCredits.setIn(userid, current - amount);
     return true;
 }
+
+/*
+* For Tournament To Give Card
+*/
+function randomGiveCardWeighted(userid: string, isWinner: boolean = false): { success: boolean; packName?: string; cardName?: string } {
+    const allCards = getAllCards();
+    const allPacks = getAllPacks();
+    const availableCards = Object.values(allCards);
+    
+    if (availableCards.length === 0) {
+        return { success: false };
+    }
+    
+    let selectedCard: Card;
+    
+    if (isWinner) {
+        // Winner gets much better chances at rare cards
+        const rareCards = availableCards.filter(card => getCardPoints(card) >= 13); // Ultra Rare and above
+        const goodCards = availableCards.filter(card => getCardPoints(card) >= 9 && getCardPoints(card) < 13); // EX/GX/V tier
+        const commonCards = availableCards.filter(card => getCardPoints(card) < 9);
+        
+        const roll = Math.random() * 100;
+        if (roll < 25 && rareCards.length > 0) {
+            // 25% chance for Ultra Rare+ (13+ points)
+            selectedCard = rareCards[Math.floor(Math.random() * rareCards.length)];
+        } else if (roll < 60 && goodCards.length > 0) {
+            // 35% chance for EX/GX/V tier (9-12 points)
+            selectedCard = goodCards[Math.floor(Math.random() * goodCards.length)];
+        } else {
+            // 40% chance for common cards
+            selectedCard = commonCards.length > 0 ? 
+                commonCards[Math.floor(Math.random() * commonCards.length)] :
+                availableCards[Math.floor(Math.random() * availableCards.length)];
+        }
+    } else {
+        // Runner-up gets slightly better chances than completely random
+        const rareCards = availableCards.filter(card => getCardPoints(card) >= 13);
+        const goodCards = availableCards.filter(card => getCardPoints(card) >= 9 && getCardPoints(card) < 13);
+        const commonCards = availableCards.filter(card => getCardPoints(card) < 9);
+        
+        const roll = Math.random() * 100;
+        if (roll < 8 && rareCards.length > 0) {
+            // 8% chance for Ultra Rare+ (13+ points)
+            selectedCard = rareCards[Math.floor(Math.random() * rareCards.length)];
+        } else if (roll < 25 && goodCards.length > 0) {
+            // 17% chance for EX/GX/V tier (9-12 points)
+            selectedCard = goodCards[Math.floor(Math.random() * goodCards.length)];
+        } else {
+            // 75% chance for common cards
+            selectedCard = commonCards.length > 0 ? 
+                commonCards[Math.floor(Math.random() * commonCards.length)] :
+                availableCards[Math.floor(Math.random() * availableCards.length)];
+        }
+    }
+    
+    const cardInstance: CardInstance = { ...selectedCard, obtainedAt: Date.now() };
+    userCards.pushIn(userid, cardInstance);
+    
+    // Get pack name
+    const packInfo = allPacks[selectedCard.setId];
+    const packName = packInfo ? packInfo.name : selectedCard.set;
+    
+    return { 
+        success: true, 
+        packName: packName,
+        cardName: selectedCard.name 
+    };
+}
+
+Impulse.randomGiveCardWeighted = randomGiveCardWeighted;
+
+/*
+* Tournament Ends
+*/
 
 // ================ Display Functions ================
 
