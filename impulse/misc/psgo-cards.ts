@@ -601,7 +601,7 @@ function displayCard(card: Card): string {
     output += `</td></tr></table></div>`;
     
     return output;
-}output += `<div style="margin-bottom: 10px;"><strong>HP:</strong> ${card.hp}</div>`;
+	output += `<div style="margin-bottom: 10px;"><strong>HP:</strong> ${card.hp}</div>`;
     }
     
     if (card.evolvesFrom) {
