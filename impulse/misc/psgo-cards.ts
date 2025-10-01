@@ -778,11 +778,13 @@ export const commands: Chat.Commands = {
                 case 'date':
                     sortedCards.sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0));
                     break;
-                default: // rarity
+                default: // rarity - sort by points (which reflects rarity tier)
                     sortedCards.sort((a, b) => {
                         const aPoints = getCardPoints(a);
                         const bPoints = getCardPoints(b);
-                        return bPoints - aPoints;
+                        if (bPoints !== aPoints) return bPoints - aPoints;
+                        // If same points, sort by name
+                        return a.name.localeCompare(b.name);
                     });
             }
             
@@ -927,6 +929,53 @@ export const commands: Chat.Commands = {
         
         cardshelp: ['/psgo cards [filters] - List all cards in database. Filters: set:id, rarity:name, type:fire, or card name'],
 
+        async rarities(target, room, user) {
+            if (!this.runBroadcast()) return;
+            
+            // Group rarities by point tiers
+            const tiers: Record<string, CardRarity[]> = {
+                'Common (1 pt)': ['Common'],
+                'Uncommon (3 pts)': ['Uncommon'],
+                'Rare (5-6 pts)': ['Rare', 'Rare Holo', 'Promo'],
+                'Special Rare (7-8 pts)': ['Rare ACE', 'Rare BREAK', 'Rare Prime'],
+                'EX/GX Era (9-11 pts)': ['Rare Holo EX', 'Rare Holo GX', 'Rare Holo LV.X'],
+                'V Era (10-12 pts)': ['Rare Holo V', 'Rare Holo VMAX', 'Rare Holo VSTAR', 'Double Rare'],
+                'Ultra Rare (13-15 pts)': ['Rare Ultra', 'Ultra Rare', 'Rare Secret', 'Rare Rainbow', 'Trainer Gallery Rare Holo'],
+                'Amazing/Radiant (16 pts)': ['Amazing Rare', 'Radiant Rare'],
+                'Illustration (17-18 pts)': ['Illustration Rare', 'Special Illustration Rare'],
+                'Legendary (18-20 pts)': ['Rare Holo Star', 'Rare LEGEND', 'Rare Shining', 'Rare Shiny', 'Rare Shiny GX'],
+                'Hyper/Mythic (22-25 pts)': ['Hyper Rare', 'Classic'],
+            };
+            
+            let output = '<div style="padding: 10px;"><h3>PSGO Rarity System</h3>';
+            output += '<p>All official Pokemon TCG rarities from Base Set (1999) to Scarlet & Violet (2025)</p>';
+            
+            for (const [tierName, rarities] of Object.entries(tiers)) {
+                output += `<h4>${tierName}</h4><ul style="margin: 5px 0;">`;
+                for (const rarity of rarities) {
+                    const color = RARITY_COLORS[rarity];
+                    const points = RARITY_POINTS[rarity];
+                    output += `<li><span style="color: ${color}; font-weight: bold;">${rarity}</span> (${points} pts)</li>`;
+                }
+                output += '</ul>';
+            }
+            
+            output += '<h4 style="margin-top: 15px;">Special Subtypes (Bonus Points)</h4>';
+            output += '<ul style="margin: 5px 0;">';
+            output += '<li>+2 pts: BREAK</li>';
+            output += '<li>+3 pts: EX, GX, V, ex, MEGA, LV.X, RADIANT, AMAZING</li>';
+            output += '<li>+4 pts: LEGEND, PRIME, SHINING, ★</li>';
+            output += '<li>+5 pts: VMAX, VSTAR</li>';
+            output += '<li>+6 pts: TAG TEAM</li>';
+            output += '</ul>';
+            output += '<p style="margin-top: 10px;"><em>Subtypes add bonus points to base rarity. Example: "Fire - GX" = Base Rarity + 3 pts</em></p>';
+            output += '</div>';
+            
+            return this.sendReplyBox(output);
+        },
+        
+        raritieshelp: ['/psgo rarities - View all card rarities and their point values'],
+
         async cleanup(target, room, user) {
             const isManagerUser = await isManager(user.id);
             if (!isManagerUser) this.checkCan('roomowner');
@@ -999,7 +1048,7 @@ export const commands: Chat.Commands = {
             if (!pack) return this.errorReply('Pack not found.');
             if (!pack.inShop && !pack.creditPack) return this.errorReply('Pack not available.');
 
-		 if (pack.creditPack) {
+            if (pack.creditPack) {
                 const credits = await getPackCredits(user.id);
                 if (credits < 1) return this.errorReply('You need 1 pack credit to buy this pack.');
                 const success = await takePackCredits(user.id, 1);
@@ -1025,7 +1074,7 @@ export const commands: Chat.Commands = {
         },
         buyhelp: ['/psgo buy [pack] - Buy pack (with coins or credits)'],
 
-		 async open(target, room, user) {
+        async open(target, room, user) {
             if (!this.runBroadcast()) return;
             if (!target) return this.parse('/help psgo open');
             const packCode = await toPackCode(target);
@@ -1097,6 +1146,11 @@ export const commands: Chat.Commands = {
         
                 if (allCards[cardId]) return this.errorReply(`Card ${cardId} already exists!`);
                 
+                // Validate rarity
+                if (!RARITY_POINTS[rarity as CardRarity]) {
+                    return this.errorReply(`Invalid rarity "${rarity}". Use /psgo rarities to see valid rarities.`);
+                }
+                
                 // Just warn if similar name exists, don't block
                 for (const existingCardId in allCards) {
                     if (allCards[existingCardId].nameId === nameId && existingCardId !== cardId) {
@@ -1117,7 +1171,7 @@ export const commands: Chat.Commands = {
                 };
                 await saveAllCards(allCards);
                 this.modlog('PSGO ADD CARD', null, cardId);
-                return this.sendReply(`Added card: ${name} (${cardId})`);
+                return this.sendReply(`Added card: ${name} (${cardId}) - ${rarity} (${getCardPoints(allCards[cardId])} pts)`);
 
             } else if (parts.length === 6) {
                 const [code, name, series, releaseDate, priceStr, flags] = parts;
@@ -1149,7 +1203,8 @@ export const commands: Chat.Commands = {
         addhelp: [
             '/psgo add [setId], [cardNumber], [name], [image], [rarity], [set], [types] - Add card',
             '/psgo add [code], [name], [series], [date], [price], [shop|credit] - Add pack',
-            'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!'
+            'Types: "Fire", "Fire - GX", "Water/Psychic - VMAX". Subtypes get bonus points!',
+            'Use /psgo rarities to see all valid rarity values'
         ],
         
         async edit(target, room, user) {
@@ -1165,6 +1220,12 @@ export const commands: Chat.Commands = {
             if (result && !Array.isArray(result) && parts.length === 6) {
                 const card = result;
                 const [, name, image, rarity, set, types] = parts;
+                
+                // Validate rarity
+                if (!RARITY_POINTS[rarity as CardRarity]) {
+                    return this.errorReply(`Invalid rarity "${rarity}". Use /psgo rarities to see valid rarities.`);
+                }
+                
                 const newNameId = makeCardNameId(card.setId, name);
                 const allCards = await getAllCards();
         
@@ -1189,7 +1250,7 @@ export const commands: Chat.Commands = {
                 };
                 await saveAllCards(allCards);
                 this.modlog('PSGO EDIT CARD', null, card.id);
-                return this.sendReply(`Edited card: ${name}`);
+                return this.sendReply(`Edited card: ${name} - ${rarity} (${getCardPoints(allCards[card.id])} pts)`);
             }
             
             if (result && Array.isArray(result)) {
@@ -1223,8 +1284,8 @@ export const commands: Chat.Commands = {
         },
 
         edithelp: ['/psgo edit [id], [params...] - Edit card or pack (same params as add)'],
-		 
-		 async delete(target, room, user) {
+
+        async delete(target, room, user) {
             const isManagerUser = await isManager(user.id);
             if (!isManagerUser) this.checkCan('roomowner');
             if (!target) return this.parse('/help psgo delete');
@@ -1405,13 +1466,15 @@ export const commands: Chat.Commands = {
                         `<li>Use <code>/psgo buy [pack]</code> to purchase packs</li>` +
                         `<li>Use <code>/psgo open [pack]</code> to open packs</li>` +
                         `<li>Use <code>/psgo collection</code> to view your cards</li>` +
+                        `<li>Use <code>/psgo rarities</code> to see all rarities</li>` +
                         `<li>Use <code>/psgo transfer [user], [card]</code> to trade cards</li>` +
                         `</ul>` +
+                        `<p><strong>Rarity System:</strong> Supports all 32 official Pokemon TCG rarities from Base Set (1999) to Scarlet & Violet (2025)</p>` +
                         `<p><strong>Important Note:</strong> If multiple cards share the same name, use the full ID format (setId-cardNumber) instead of setId-cardName</p>` +
                         `</div>`;
                     break;
                 case 'user':
-						case '1':
+                case '1':
                     output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
                         `<h3>User Commands</h3>` +
                         `<table style="width: 100%; border-collapse: collapse;">` +
@@ -1420,6 +1483,9 @@ export const commands: Chat.Commands = {
                         `<th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Permission</th></tr>` +
                         `<tr><td style="padding: 8px;"><code>/psgo show</code></td>` +
                         `<td style="padding: 8px;">/psgo show base1-25<br>/psgo show base1-charizard<br>(If multiple cards match, you'll see a list)</td>` +
+                        `<td style="padding: 8px;">Everyone</td></tr>` +
+                        `<tr><td style="padding: 8px;"><code>/psgo rarities</code></td>` +
+                        `<td style="padding: 8px;">/psgo rarities<br>(View all 32 official rarities and point values)</td>` +
                         `<td style="padding: 8px;">Everyone</td></tr>` +
                         `<tr><td style="padding: 8px;"><code>/psgo transfer</code></td>` +
                         `<td style="padding: 8px;">/psgo transfer username, base1-25<br>/psgo transfer base1-25, username<br>(Transfers YOUR card to another user)</td>` +
@@ -1431,7 +1497,7 @@ export const commands: Chat.Commands = {
                         `<td style="padding: 8px;">/psgo ladder</td>` +
                         `<td style="padding: 8px;">Everyone</td></tr>` +
                         `<tr><td style="padding: 8px;"><code>/psgo cards</code></td>` +
-                        `<td style="padding: 8px;">/psgo cards<br>/psgo cards set:base1<br>/psgo cards rarity:mythic<br>/psgo cards charizard</td>` +
+                        `<td style="padding: 8px;">/psgo cards<br>/psgo cards set:base1<br>/psgo cards rarity:hyper<br>/psgo cards charizard</td>` +
                         `<td style="padding: 8px;">Everyone</td></tr>` +
                         `<tr><td style="padding: 8px;"><code>/psgo shop</code></td>` +
                         `<td style="padding: 8px;">/psgo shop</td>` +
@@ -1451,7 +1517,7 @@ export const commands: Chat.Commands = {
                     break;
                 case 'admin':
                 case '2':
-						output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+                    output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
                         `<h3>Admin Commands</h3>` +
                         `<table style="width: 100%; border-collapse: collapse;">` +
                         `<tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Command</th>` +
@@ -1461,11 +1527,12 @@ export const commands: Chat.Commands = {
                         `<td style="padding: 8px;">/psgo give username, base1-25<br>/psgo give base1-25, username<br>(Gives ANY card to user, no ownership required)</td>` +
                         `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                         `<tr><td style="padding: 8px;"><code>/psgo add</code></td>` +
-                        `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo add base1, 25, Charizard, [url], Rare, Base Set, Fire<br><br>` +
-                        `<strong>Pack:</strong><br>/psgo add base1, Base Set, Generation 1, 1999-01-09, 100, shop</td>` +
+                        `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo add base1, 25, Charizard, [url], Rare Holo, Base Set, Fire<br><br>` +
+                        `<strong>Pack:</strong><br>/psgo add base1, Base Set, Generation 1, 1999-01-09, 100, shop<br><br>` +
+                        `<em>Use /psgo rarities to see all 32 valid rarity values</em></td>` +
                         `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
                         `<tr><td style="padding: 8px;"><code>/psgo edit</code></td>` +
-                        `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo edit base1-25, Charizard, [url], Rare, Base Set, Fire - EX<br><br>` +
+                        `<td style="padding: 8px;"><strong>Card:</strong><br>/psgo edit base1-25, Charizard, [url], Hyper Rare, Base Set, Fire - GX<br><br>` +
                         `<strong>Pack:</strong><br>/psgo edit base1, Base Set, Gen 1, 1999-01-09, 150, shop<br><br>` +
                         `<em>Note: Use full ID (setId-cardNumber) if multiple cards share a name</em></td>` +
                         `<td style="padding: 8px;">Manager or ~, &</td></tr>` +
@@ -1507,7 +1574,7 @@ export const commands: Chat.Commands = {
                     break;
                 case 'examples':
                 case '4':
-						output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
+                    output = `<div class="ladder pad"><h2>PSGO Card System Help</h2>` +
                         `<h3>Usage Examples</h3>` +
                         `<p><strong>Card Format:</strong></p>` +
                         `<ul>` +
@@ -1524,6 +1591,15 @@ export const commands: Chat.Commands = {
                         `<ul>` +
                         `<li><code>/psgo transfer</code> - Regular users transfer THEIR OWN cards</li>` +
                         `<li><code>/psgo give</code> - Admins/Managers give ANY card (doesn't need to own it)</li>` +
+                        `</ul>` +
+                        `<p><strong>Rarity Examples:</strong></p>` +
+                        `<ul>` +
+                        `<li>Base Set Era: <code>Common</code>, <code>Uncommon</code>, <code>Rare</code>, <code>Rare Holo</code></li>` +
+                        `<li>EX Era: <code>Rare Holo EX</code>, <code>Rare Holo Star</code>, <code>Rare Holo LV.X</code></li>` +
+                        `<li>BW/XY Era: <code>Rare BREAK</code>, <code>Rare Holo GX</code></li>` +
+                        `<li>SwSh Era: <code>Rare Holo V</code>, <code>Rare Holo VMAX</code>, <code>Rare Holo VSTAR</code>, <code>Amazing Rare</code></li>` +
+                        `<li>SV Era: <code>Illustration Rare</code>, <code>Special Illustration Rare</code>, <code>Hyper Rare</code></li>` +
+                        `<li>Use <code>/psgo rarities</code> to see all 32 rarities!</li>` +
                         `</ul>` +
                         `<p><strong>Types Format:</strong></p>` +
                         `<ul>` +
@@ -1549,12 +1625,12 @@ export const commands: Chat.Commands = {
                         `<ol>` +
                         `<li>Add pack → <code>/psgo add base1, Base Set, Gen 1, 1999-01-09, 100, shop</code></li>` +
                         `<li>Add cards → <code>/psgo add base1, 1, Bulbasaur, [url], Common, Base Set, Grass</code></li>` +
-                        `<li>Add variant → <code>/psgo add base1, 25, Pikachu, [url], Rare, Base Set, Electric</code></li>` +
-                        `<li>Add another variant → <code>/psgo add base1, 58, Pikachu, [url], Common, Base Set, Electric</code></li>` +
+                        `<li>Add rare card → <code>/psgo add base1, 4, Charizard, [url], Rare Holo, Base Set, Fire</code></li>` +
+                        `<li>Add modern card → <code>/psgo add swsh1, 25, Pikachu VMAX, [url], Rare Holo VMAX, Sword & Shield Base, Electric - VMAX</code></li>` +
                         `<li>User buys → <code>/psgo buy base1</code></li>` +
                         `<li>User opens → <code>/psgo open base1</code></li>` +
                         `<li>View collection → <code>/psgo collection</code></li>` +
-                        `<li>Show specific card → <code>/psgo show base1-25</code> or <code>/psgo show base1-pikachu</code></li>` +
+                        `<li>Show specific card → <code>/psgo show base1-25</code> or <code>/psgo show base1-charizard</code></li>` +
                         `<li>Transfer card → <code>/psgo transfer friendname, base1-25</code></li>` +
                         `<li>Admin give card → <code>/psgo give newuser, base1-25</code></li>` +
                         `</ol>` +
@@ -1577,7 +1653,7 @@ export const commands: Chat.Commands = {
     },
     showcasehelp: ['/showcase [user] - View card collection'],
 
-	cardladder(target, room, user) {
+    cardladder(target, room, user) {
         if (!this.runBroadcast()) return;
         return this.parse('/psgo ladder');
     },
@@ -1588,4 +1664,55 @@ export const commands: Chat.Commands = {
         return this.parse(`/psgo open ${target}`);
     },
     openpackhelp: ['/openpack [pack] - Open pack'],
+};
+
+export const pages: Chat.PageTable = {
+    async psgo(args, user) {
+        const [action, ...params] = args;
+        
+        if (action === 'collection') {
+            const targetUser = params[0] ? toID(params[0]) : user.id;
+            const cards = await getUserCards(targetUser);
+            if (!cards.length) {
+                return `<div class="pad"><h2>${Impulse.nameColor(targetUser, true, true)} has no cards.</h2></div>`;
+            }
+
+            // Group cards by rarity and sort by points
+            const cardsByRarity: Record<string, CardInstance[]> = {};
+            for (const card of cards) {
+                if (!cardsByRarity[card.rarity]) cardsByRarity[card.rarity] = [];
+                cardsByRarity[card.rarity].push(card);
+            }
+
+            let output = '<div class="pad">';
+            output += `<h2>${Impulse.nameColor(targetUser, true, true)}'s Collection (${cards.length} cards)</h2>`;
+
+            // Sort rarities by their point value (highest to lowest)
+            const sortedRarities = Object.keys(cardsByRarity).sort((a, b) => {
+                const aPoints = RARITY_POINTS[a as CardRarity] || 0;
+                const bPoints = RARITY_POINTS[b as CardRarity] || 0;
+                return bPoints - aPoints;
+            });
+
+            for (const rarity of sortedRarities) {
+                const rarityCards = cardsByRarity[rarity];
+                output += `<h3 style="color: ${RARITY_COLORS[rarity as CardRarity]}">${rarity} (${rarityCards.length})</h3>`;
+                output += '<div style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 20px;">';
+                
+                for (const card of rarityCards) {
+                    const { subtype } = parseCardTypes(card.types);
+                    const buttonStyle = subtype && SPECIAL_SUBTYPES[subtype] 
+                        ? `padding: 0; border: 2px solid ${SPECIAL_SUBTYPES[subtype].color}; box-shadow: 0 0 8px ${SPECIAL_SUBTYPES[subtype].color}40;`
+                        : 'padding: 0;';
+                    output += `<button class="button" name="send" value="/psgo show ${card.id}" style="${buttonStyle}">` +
+                        `<img src="${card.image}" height="120" width="100" title="${card.name}"></button>`;
+                }
+                output += '</div>';
+            }
+            output += '</div>';
+            return output;
+        }
+        
+        return '<div class="pad"><h2>Invalid PSGO page.</h2></div>';
+    },
 };
