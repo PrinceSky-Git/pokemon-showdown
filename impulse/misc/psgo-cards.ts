@@ -570,8 +570,8 @@ async function takePackCredits(userid: string, amount: number): Promise<boolean>
 * For Tournament To Give Card
 */
 function randomGiveCardWeighted(userid: string, isWinner: boolean = false): { success: boolean; packName?: string; cardName?: string } {
-    const allCards = getAllCards();
-    const allPacks = getAllPacks();
+    const allCards = getAllCardsSync();
+    const allPacks = getAllPacksSync();
     const availableCards = Object.values(allCards);
     
     if (availableCards.length === 0) {
@@ -621,7 +621,7 @@ function randomGiveCardWeighted(userid: string, isWinner: boolean = false): { su
     }
     
     const cardInstance: CardInstance = { ...selectedCard, obtainedAt: Date.now() };
-    userCards.pushIn(userid, cardInstance);
+    userCards.pushInSync(userid, cardInstance);
     
     // Get pack name
     const packInfo = allPacks[selectedCard.setId];
@@ -634,7 +634,7 @@ function randomGiveCardWeighted(userid: string, isWinner: boolean = false): { su
     };
 }
 
-Impulse.randomGiveCardWeighted = randomGiveCardWeighted;
+Impulse.randomGiveCardWeightedSync = randomGiveCardWeightedSync;
 
 /*
 * Tournament Ends
