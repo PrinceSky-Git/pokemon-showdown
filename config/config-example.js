@@ -32,7 +32,7 @@ exports.tournamentRewards = {
 	2: 5
 };
 
-Config.youtubeKey = '';
+exports.youtubeKey = '';
 
 /**
  * wsdeflate - compresses WebSocket messages
