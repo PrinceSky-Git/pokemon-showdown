@@ -19,26 +19,6 @@ interface SymbolColorDocument {
 // Get typed MongoDB collection for symbol colors
 const SymbolColorsDB = MongoDB<SymbolColorDocument>('symbolcolors');
 
-// Lazy initialization helper
-async function ensureMongoDBConnected(): Promise<boolean> {
-	if (MongoDB.isConnected()) return true;
-	
-	if (!Config.mongodb) {
-		console.log('MongoDB not configured');
-		return false;
-	}
-	
-	try {
-		console.log('MongoDB not connected, connecting now...');
-		await MongoDB.connect(Config.mongodb);
-		console.log('MongoDB connected successfully!');
-		return true;
-	} catch (error) {
-		console.error('Failed to connect to MongoDB:', error);
-		return false;
-	}
-}
-
 async function updateSymbolColors(): Promise<void> {
 	try {
 		// Fetch all symbol color documents from MongoDB
@@ -75,12 +55,6 @@ export const commands: Chat.ChatCommands = {
 	symbolcolor: {
 		async set(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
-			
 			const [name, color] = target.split(',').map(s => s.trim());
 			if (!name || !color) return this.parse('/help symbolcolor');
 			
@@ -124,12 +98,6 @@ export const commands: Chat.ChatCommands = {
 		
 		async update(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
-			
 			const [name, color] = target.split(',').map(s => s.trim());
 			if (!name || !color) return this.parse('/help symbolcolor');
 			
@@ -169,12 +137,6 @@ export const commands: Chat.ChatCommands = {
 
 		async delete(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
-			
 			const userId = toID(target);
 			
 			// Use exists() for efficient check before delete
@@ -201,12 +163,6 @@ export const commands: Chat.ChatCommands = {
 		
 		async list(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
-			
 			const page = parseInt(target) || 1;
 			
 			// Use findWithPagination() - optimized for paginated results
@@ -244,11 +200,6 @@ export const commands: Chat.ChatCommands = {
 		},
 		
 		async view(this: CommandContext, target: string, room: Room, user: User) {
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
-			
 			const userId = toID(target);
 			if (!userId) return this.parse('/help symbolcolor');
 			
@@ -272,11 +223,6 @@ export const commands: Chat.ChatCommands = {
 		
 		async setmany(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
 			
 			// Parse bulk input: userid1:color1, userid2:color2, ...
 			const entries = target.split(',').map(s => s.trim()).filter(Boolean);
@@ -328,12 +274,6 @@ export const commands: Chat.ChatCommands = {
 		
 		async search(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
-			
 			if (!target) return this.errorReply('Please provide a search term.');
 			
 			const searchTerm = toID(target);
@@ -359,11 +299,6 @@ export const commands: Chat.ChatCommands = {
 		
 		async count(this: CommandContext, target: string, room: Room, user: User) {
 			this.checkCan('globalban');
-			
-			// Ensure MongoDB is connected
-			if (!await ensureMongoDBConnected()) {
-				return this.errorReply('MongoDB is not available. Please contact an administrator.');
-			}
 			
 			// Use count() - most efficient way to get document count
 			const total = await SymbolColorsDB.count({});
