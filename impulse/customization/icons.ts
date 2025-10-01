@@ -7,10 +7,8 @@
 import { FS } from '../../lib';
 import { MongoDB } from '../../impulse/mongodb_module';
 
-// Change this to match your server's userlist color.
-const backgroundColor = 'rgba(255, 255, 255, 0.95)';
 const STAFF_ROOM_ID = 'staff';
-const DEFAULT_ICON_SIZE = 30;
+const DEFAULT_ICON_SIZE = 26;
 
 interface IconData {
   url: string;
@@ -40,7 +38,7 @@ async function updateIcons(): Promise<void> {
       const size = doc.size || DEFAULT_ICON_SIZE;
       const userid = doc._id;
       
-      newCss += `[id$="-userlist-user-${userid}"] { background: ${backgroundColor} url("${url}") right no-repeat !important; background-size: ${size}px!important;}\n`;
+      newCss += `[id$="-userlist-user-${userid}"] { background: url("${url}") right no-repeat !important; background-size: ${size}px!important;}\n`;
     }
     
     newCss += '/* ICONS END */\n';
