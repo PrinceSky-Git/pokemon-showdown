@@ -1,12 +1,11 @@
 /**
- * PSGO Card System - Commands (Clean Version)
- * Modern command implementation without legacy support
+ * PSGO Card System - Commands
  * @license MIT
  */
 
 import { PSGOStorage } from './psgo-storage';
 import { PSGOCardManager } from './psgo-manager';
-import { Economy } from '../impulse/misc/economy';
+import { Economy } from '../../impulse/misc/economy';
 import type { Card, CardInstance, PackDefinition, UserSettings } from './psgo-models';
 import { RARITY_COLORS, SPECIAL_SUBTYPES, RARITY_POINTS } from './psgo-models';
 
@@ -240,7 +239,7 @@ export const commands: Chat.Commands = {
 				];
 			});
 
-			const tableHTML = generateTable('PSGO Card Ladder', ['Rank', 'User', 'Points', 'Cards'], data);
+			const tableHTML = Impulse.generateTable('PSGO Card Ladder', ['Rank', 'User', 'Points', 'Cards'], data);
 			return this.sendReplyBox(tableHTML);
 		},
 		ladderhelp: `/psgo ladder - View points leaderboard`,
@@ -612,89 +611,45 @@ export const commands: Chat.Commands = {
 
 		// Help system
 		help(target, room, user) {
-			if (!this.runBroadcast()) return;
-			
-			const page = toID(target) || 'main';
-			let output = '';
+  if (!this.runBroadcast()) return;
+  
+  const page = toID(target) || 'main';
+  let output = ``;
 
-			switch (page) {
-				case 'main':
-				case '':
-					output = `<div class="ladder pad">
-						<h2>PSGO Card System Help</h2>
-						<p><strong>User Commands:</strong></p>
-						<ul>
-							<li><code>/psgo show [cardId]</code> - Show card details</li>
-							<li><code>/psgo collection [user]</code> - View card collection</li>
-							<li><code>/psgo transfer [user], [cardId]</code> - Transfer cards</li>
-							<li><code>/psgo shop</code> - Browse pack shop</li>
-							<li><code>/psgo buy [pack]</code> - Buy packs</li>
-							<li><code>/psgo open [pack]</code> - Open packs</li>
-							<li><code>/psgo ladder</code> - View leaderboard</li>
-						</ul>
-						<p><strong>Admin Commands:</strong></p>
-						<ul>
-							<li><code>/psgo add [params]</code> - Add cards/packs</li>
-							<li><code>/psgo edit [id, params]</code> - Edit cards/packs</li>
-							<li><code>/psgo delete [id]</code> - Delete cards/packs</li>
-							<li><code>/psgo give [user], [cardId]</code> - Give cards</li>
-							<li><code>/psgo manage [action], [user]</code> - System management</li>
-						</ul>
-					</div>`;
-					break;
+  switch (page) {
+    case 'main':
+    case '':
+      output = `<div class="ladder pad">` +
+        `<h2>PSGO Card System Help</h2>` +
+        `<p><strong>User Commands:</strong></p>` +
+        `<ul>` +
+          `<li><code>/psgo show [cardId]</code> - Show card details</li>` +
+          `<li><code>/psgo collection [user]</code> - View card collection</li>` +
+          `<li><code>/psgo transfer [user], [cardId]</code> - Transfer cards</li>` +
+          `<li><code>/psgo shop</code> - Browse pack shop</li>` +
+          `<li><code>/psgo buy [pack]</code> - Buy packs</li>` +
+          `<li><code>/psgo open [pack]</code> - Open packs</li>` +
+          `<li><code>/psgo ladder</code> - View leaderboard</li>` +
+        `</ul>` +
+        `<p><strong>Admin Commands:</strong></p>` +
+        `<ul>` +
+          `<li><code>/psgo add [params]</code> - Add cards/packs</li>` +
+          `<li><code>/psgo edit [id, params]</code> - Edit cards/packs</li>` +
+          `<li><code>/psgo delete [id]</code> - Delete cards/packs</li>` +
+          `<li><code>/psgo give [user], [cardId]</code> - Give cards</li>` +
+          `<li><code>/psgo manage [action], [user]</code> - System management</li>` +
+        `</ul>` +
+      `</div>`;
+      break;
 
-				default:
-					output = `<div class="ladder pad">
-						<h2>PSGO Card System Help</h2>
-						<p>Use <code>/psgo help</code> to see all commands.</p>
-					</div>`;
-			}
+    default:
+      output = `<div class="ladder pad">` +
+        `<h2>PSGO Card System Help</h2>` +
+        `<p>Use <code>/psgo help</code> to see all commands.</p>` +
+      `</div>`;
+  }
 
-			return this.sendReplyBox(output);
-		},
-	},
-};
-
-// Export pages
-export const pages: Chat.PageTable = {
-	async psgo(args, user) {
-		const [action, ...params] = args;
-		
-		if (action === 'collection') {
-			const targetUser = params[0] ? toID(params[0]) : user.id;
-			const cards = await PSGOStorage.getUserCards(targetUser);
-			
-			if (!cards.length) {
-				return `<div class="pad"><h2>${formatUserName(targetUser, true, true)} has no cards.</h2></div>`;
-			}
-
-			const cardsByRarity: Record<string, CardInstance[]> = {};
-			for (const card of cards) {
-				if (!cardsByRarity[card.rarity]) cardsByRarity[card.rarity] = [];
-				cardsByRarity[card.rarity].push(card);
-			}
-
-			let output = `<div class="pad">`;
-			output += `<h2>${formatUserName(targetUser, true, true)}'s Collection (${cards.length} cards)</h2>`;
-
-			const rarityOrder = ['Ultra Rare', 'Secret Rare', 'Rare Holo', 'Rare', 'Uncommon', 'Common'];
-			for (const rarity of rarityOrder) {
-				if (!cardsByRarity[rarity]) continue;
-				output += `<h3 style="color: ${RARITY_COLORS[rarity]}">${rarity} (${cardsByRarity[rarity].length})</h3>`;
-				output += `<div style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 20px;">`;
-				for (const card of cardsByRarity[rarity]) {
-					const hasSpecialSubtype = card.subtypes?.some(st => SPECIAL_SUBTYPES[st]);
-					const buttonStyle = hasSpecialSubtype && card.subtypes ? 
-						`padding: 0; border: 2px solid ${SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color}; box-shadow: 0 0 8px ${SPECIAL_SUBTYPES[card.subtypes.find(st => SPECIAL_SUBTYPES[st])!]?.color}40;` : 
-						'padding: 0;';
-					output += `<button class="button" name="send" value="/psgo show ${card.id}" style="${buttonStyle}"><img src="${card.images.small}" height="120" width="100" title="${card.name}"></button>`;
-				}
-				output += `</div>`;
-			}
-			output += `</div>`;
-			return output;
-		}
-
-		return `<div class="pad"><h2>Invalid PSGO page.</h2></div>`;
+  return this.sendReplyBox(output);
+},
 	},
 };
