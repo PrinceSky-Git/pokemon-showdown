@@ -278,9 +278,9 @@ export const commands: Chat.ChatCommands = {
 			}
 			
 			return this.sendReplyBox(`
-				${buyResult.message}<br>
-				<button class="button" name="send" value="/psgo open ${packCode}">Open Pack</button> 
-				<button class="button" name="send" value="/psgo packs">View Your Packs</button>
+				${buyResult.message}<br>` +
+				`<button class="button" name="send" value="/psgo open ${packCode}">Open Pack</button>` +
+				`<button class="button" name="send" value="/psgo packs">View Your Packs</button>
 			`);
 		},
 		buyhelp: `/psgo buy [pack] - Buy pack with coins or credits`,
@@ -317,8 +317,8 @@ export const commands: Chat.ChatCommands = {
 			}).join('');
 
 			return this.sendReplyBox(`
-				<div style="margin-bottom: 10px;">You opened **${packName}** and got ${cards.length} cards!</div>
-				<div>${cardsHTML}</div>
+				<div style="margin-bottom: 10px;">You opened **${packName}** and got ${cards.length} cards!</div>` +
+				`<div>${cardsHTML}</div>
 			`);
 		},
 		openhelp: `/psgo open [pack] - Open pack`,
@@ -340,18 +340,18 @@ export const commands: Chat.ChatCommands = {
 			const packsHTML = Object.entries(packCounts).map(([code, count]) => {
 				const pack = allPacks[code];
 				const packName = pack ? pack.name : code;
-				return `<div style="margin: 5px 0;">
-					<button class="button" name="send" value="/psgo open ${code}">Open ${packName}</button> 
-					(${count} remaining)
-				</div>`;
+				return `<div style="margin: 5px 0;">` +
+					`<button class="button" name="send" value="/psgo open ${code}">Open ${packName}</button>` +
+					`(${count} remaining)` +
+				`</div>`;
 			}).join('');
 
 			const credits = await PSGOStorage.getPackCredits(user.id);
 
 			return this.sendReplyBox(`
-				<div style="font-weight: bold; margin-bottom: 10px;">Your Unopened Packs</div>
-				${packsHTML}
-				<div style="margin-top: 10px;">Pack Credits: ${credits}</div>
+				<div style="font-weight: bold; margin-bottom: 10px;">Your Unopened Packs</div>` +
+				`${packsHTML}` +
+				`<div style="margin-top: 10px;">Pack Credits: ${credits}</div>
 			`);
 		},
 		packshelp: `/psgo packs - View your unopened packs`,
