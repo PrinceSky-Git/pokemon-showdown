@@ -21,7 +21,7 @@ function formatUserName(userId: string, bold: boolean = true, showGroup: boolean
 	return Impulse.nameColor(userId, bold, showGroup);
 }
 
-export const commands: Chat.ChatCommands = {
+export const commands: Chat.Commands = {
 	psgo: {
 		// Show card details
 		async show(target, room, user) {
