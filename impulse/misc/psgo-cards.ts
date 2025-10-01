@@ -936,7 +936,7 @@ export const commands: Chat.Commands = {
     const cardList = Object.values(allCards).filter(c => c.id && c.name && c.setId);
 
     if (!cardList.length) {
-        return this.sendReplyBox('No cards in database.');
+        return this.sendReply('No cards in database.');
     }
     
     // Parse filters and page
@@ -974,7 +974,7 @@ export const commands: Chat.Commands = {
     }
 
     if (!filteredCards.length) {
-        return this.sendReplyBox('No cards found matching your filters.');
+        return this.sendReply('No cards found matching your filters.');
     }
 
     // Sort by set and card number
@@ -1021,11 +1021,7 @@ export const commands: Chat.Commands = {
     html += `</div></div>`;
 
     // Send initial HTML
-    if (this.broadcasting) {
-        this.sendReplyBox(html);
-    } else {
-        this.sendReply(`|uhtml|${htmlId}|${html}`);
-    }
+    this.sendReply(`|uhtml|${htmlId}|${html}`);
 
     // Generate table content asynchronously
     setImmediate(async () => {
@@ -1063,31 +1059,30 @@ export const commands: Chat.Commands = {
             // Update the content
             if (!user.connected) return;
             
-            if (this.broadcasting) {
-                // For broadcasts, we can't update, so just show static content
-                return;
-            } else {
-                user.sendTo(room, `|uhtmlchange|${htmlId}|<div class="pad">` +
-                    `<h2>PSGO Cards Database</h2>` +
-                    `<p><strong>Filters:</strong> ${filtersText} | <strong>Total Results:</strong> ${filteredCards.length} | <strong>Page:</strong> ${page}/${totalPages}</p>` +
-                    (totalPages > 1 ? `<div style="margin: 10px 0; text-align: center;">` +
-                        (page > 1 ? `<button class="button" name="send" value="/psgo cards ${filters.length ? filters.join(', ') + ', ' : ''}page:${page - 1}">← Previous</button> ` : '') +
-                        `Page ${page} of ${totalPages}` +
-                        (page < totalPages ? ` <button class="button" name="send" value="/psgo cards ${filters.length ? filters.join(', ') + ', ' : ''}page:${page + 1}">Next →</button>` : '') +
-                        `</div>` : '') +
-                    `<div style="max-height: 400px; overflow-y: auto;">${tableHTML}</div>` +
-                    `<div style="margin-top: 10px; font-size: 0.9em;">` +
-                    `<strong>Filters:</strong> set:base1, rarity:mythic, type:fire, or search by name<br>` +
-                    `<strong>Example:</strong> /psgo cards set:base1, rarity:rare, page:2` +
-                    `</div></div>`);
-            }
+            const updatedHTML = `<div class="pad">` +
+                `<h2>PSGO Cards Database</h2>` +
+                `<p><strong>Filters:</strong> ${filtersText} | <strong>Total Results:</strong> ${filteredCards.length} | <strong>Page:</strong> ${page}/${totalPages}</p>` +
+                (totalPages > 1 ? `<div style="margin: 10px 0; text-align: center;">` +
+                    (page > 1 ? `<button class="button" name="send" value="/psgo cards ${filters.length ? filters.join(', ') + ', ' : ''}page:${page - 1}">← Previous</button> ` : '') +
+                    `Page ${page} of ${totalPages}` +
+                    (page < totalPages ? ` <button class="button" name="send" value="/psgo cards ${filters.length ? filters.join(', ') + ', ' : ''}page:${page + 1}">Next →</button>` : '') +
+                    `</div>` : '') +
+                `<div style="max-height: 400px; overflow-y: auto;">${tableHTML}</div>` +
+                `<div style="margin-top: 10px; font-size: 0.9em;">` +
+                `<strong>Filters:</strong> set:base1, rarity:mythic, type:fire, or search by name<br>` +
+                `<strong>Example:</strong> /psgo cards set:base1, rarity:rare, page:2` +
+                `</div></div>`;
+
+            this.sendReply(`|uhtmlchange|${htmlId}|${updatedHTML}`);
+            
         } catch (error) {
-            if (user.connected && !this.broadcasting) {
-                user.sendTo(room, `|uhtmlchange|${htmlId}|<div class="pad"><p>Error loading cards. Please try again.</p></div>`);
+            if (user.connected) {
+                this.sendReply(`|uhtmlchange|${htmlId}|<div class="pad"><p>Error loading cards. Please try again.</p></div>`);
             }
         }
     });
-},	 
+},
+		 
         
         cardshelp: ['/psgo cards [filters], [page:number] - List cards with pagination. Filters: set:id, rarity:name, type:fire, or card name. Example: /psgo cards set:base1, page:2'],
 
