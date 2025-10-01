@@ -929,79 +929,167 @@ export const commands: Chat.Commands = {
         },
         ladderhelp: ['/psgo ladder - View points leaderboard'],
 
-        async cards(target, room, user) {
-            if (!this.runBroadcast()) return;
+		 async cards(target, room, user) {
+    if (!this.runBroadcast()) return;
+
+    const allCards = await getAllCards();
+    const cardList = Object.values(allCards).filter(c => c.id && c.name && c.setId);
+
+    if (!cardList.length) {
+        return this.sendReplyBox('No cards in database.');
+    }
     
-            const allCards = await getAllCards();
-            const cardList = Object.values(allCards).filter(c => c.id && c.name && c.setId);
+    // Parse filters and page
+    const parts = target.split(',').map(x => x.trim());
+    const filters: string[] = [];
+    let page = 1;
     
-            if (!cardList.length) {
-                return this.sendReplyBox('No cards in database.');
-            }
+    for (const part of parts) {
+        if (part.toLowerCase().startsWith('page:')) {
+            page = parseInt(part.substring(5)) || 1;
+        } else if (part) {
+            filters.push(part.toLowerCase());
+        }
+    }
+
+    let filteredCards = [...cardList];
+
+    // Apply filters
+    for (const filter of filters) {
+        if (!filter) continue;
+
+        if (filter.startsWith('set:')) {
+            const setId = filter.substring(4);
+            filteredCards = filteredCards.filter(c => c.setId.toLowerCase().includes(setId));
+        } else if (filter.startsWith('rarity:')) {
+            const rarity = filter.substring(7);
+            filteredCards = filteredCards.filter(c => c.rarity.toLowerCase().includes(rarity));
+        } else if (filter.startsWith('type:')) {
+            const type = filter.substring(5);
+            filteredCards = filteredCards.filter(c => c.types.toLowerCase().includes(type));
+        } else {
+            // Search in name
+            filteredCards = filteredCards.filter(c => c.name.toLowerCase().includes(filter));
+        }
+    }
+
+    if (!filteredCards.length) {
+        return this.sendReplyBox('No cards found matching your filters.');
+    }
+
+    // Sort by set and card number
+    filteredCards.sort((a, b) => {
+        if (a.setId !== b.setId) return a.setId.localeCompare(b.setId);
+        return parseInt(a.cardNumber) - parseInt(b.cardNumber);
+    });
+
+    // Pagination
+    const cardsPerPage = 100;
+    const totalPages = Math.ceil(filteredCards.length / cardsPerPage);
+    const startIdx = (page - 1) * cardsPerPage;
+    const endIdx = Math.min(startIdx + cardsPerPage, filteredCards.length);
+    const pageCards = filteredCards.slice(startIdx, endIdx);
+
+    // Generate unique HTML ID for this command
+    const htmlId = `psgo-cards-${user.id}-${Date.now()}`;
+    
+    // Build initial HTML
+    const filtersText = filters.length ? filters.join(', ') : 'none';
+    let html = `<div class="pad">`;
+    html += `<h2>PSGO Cards Database</h2>`;
+    html += `<p><strong>Filters:</strong> ${filtersText} | <strong>Total Results:</strong> ${filteredCards.length} | <strong>Page:</strong> ${page}/${totalPages}</p>`;
+    
+    // Pagination controls
+    if (totalPages > 1) {
+        html += `<div style="margin: 10px 0; text-align: center;">`;
+        if (page > 1) {
+            const prevFilters = filters.length ? filters.join(', ') + ', ' : '';
+            html += `<button class="button" name="send" value="/psgo cards ${prevFilters}page:${page - 1}">← Previous</button> `;
+        }
+        html += `Page ${page} of ${totalPages}`;
+        if (page < totalPages) {
+            const nextFilters = filters.length ? filters.join(', ') + ', ' : '';
+            html += ` <button class="button" name="send" value="/psgo cards ${nextFilters}page:${page + 1}">Next →</button>`;
+        }
+        html += `</div>`;
+    }
+    
+    html += `<div id="${htmlId}-content">Loading cards...</div>`;
+    html += `<div style="margin-top: 10px; font-size: 0.9em;">`;
+    html += `<strong>Filters:</strong> set:base1, rarity:mythic, type:fire, or search by name<br>`;
+    html += `<strong>Example:</strong> /psgo cards set:base1, rarity:rare, page:2`;
+    html += `</div></div>`;
+
+    // Send initial HTML
+    if (this.broadcasting) {
+        this.sendReplyBox(html);
+    } else {
+        this.sendReply(`|uhtml|${htmlId}|${html}`);
+    }
+
+    // Generate table content asynchronously
+    setImmediate(async () => {
+        try {
+            // Build table rows in chunks to avoid blocking
+            const rows: string[][] = [];
+            const chunkSize = 25;
             
-            // Parse filters
-            const filters = target.split(',').map(x => x.trim().toLowerCase());
-            let filteredCards = [...cardList];
-    
-            // Apply filters
-            for (const filter of filters) {
-                if (!filter) continue;
-        
-                if (filter.startsWith('set:')) {
-                    const setId = filter.substring(4);
-                    filteredCards = filteredCards.filter(c => c.setId.toLowerCase().includes(setId));
-                } else if (filter.startsWith('rarity:')) {
-                    const rarity = filter.substring(7);
-                    filteredCards = filteredCards.filter(c => c.rarity.toLowerCase().includes(rarity));
-                } else if (filter.startsWith('type:')) {
-                    const type = filter.substring(5);
-                    filteredCards = filteredCards.filter(c => c.types.toLowerCase().includes(type));
-                } else {
-                    // Search in name
-                    filteredCards = filteredCards.filter(c => c.name.toLowerCase().includes(filter));
+            for (let i = 0; i < pageCards.length; i += chunkSize) {
+                const chunk = pageCards.slice(i, i + chunkSize);
+                
+                for (const card of chunk) {
+                    const rarityColor = RARITY_COLORS[card.rarity] || '#6366F1';
+                    rows.push([
+                        `<button class="button" name="send" value="/psgo show ${card.id}">${card.id}</button>`,
+                        card.name,
+                        card.set,
+                        `<span style="color: ${rarityColor}; font-weight: bold;">${card.rarity}</span>`,
+                        card.types || 'None'
+                    ]);
+                }
+                
+                // Yield control periodically
+                if (i + chunkSize < pageCards.length) {
+                    await new Promise(resolve => setImmediate(resolve));
                 }
             }
-    
-            if (!filteredCards.length) {
-                return this.sendReplyBox('No cards found matching your filters.');
-            }
-    
-            // Sort by set and card number
-            filteredCards.sort((a, b) => {
-                if (a.setId !== b.setId) return a.setId.localeCompare(b.setId);
-                return parseInt(a.cardNumber) - parseInt(b.cardNumber);
-            });
-    
-            // Build table rows for ALL filtered cards (no pagination)
-            const rows = filteredCards.map(card => {
-                const rarityColor = RARITY_COLORS[card.rarity] || '#6366F1';
-                return [
-                    `<button class="button" name="send" value="/psgo show ${card.id}">${card.id}</button>`,
-                    card.name,
-                    card.set,
-                    `<span style="color: ${rarityColor}; font-weight: bold;">${card.rarity}</span>`,
-                    card.types || 'None'
-                ];
-            });
-    
+
             const tableHTML = Impulse.generateThemedTable(
-                `All Cards (${filteredCards.length} total)`,
+                `Cards ${startIdx + 1}-${endIdx} of ${filteredCards.length}`,
                 ['ID', 'Name', 'Set', 'Rarity', 'Types'],
                 rows
             );
-    
-            return this.sendReplyBox(
-                `<div style="max-height: 360px; overflow-y: auto;">` +
-                tableHTML +
-                `</div>` +
-                `<div style="margin-top: 10px; font-size: 0.9em;">` +
-                `<strong>Filters:</strong> set:base1, rarity:mythic, type:fire, or search by name<br>` +
-                `<strong>Example:</strong> /psgo cards set:base1, rarity:rare` +
-                `</div>`
-            );
-        },
+
+            // Update the content
+            if (!user.connected) return;
+            
+            if (this.broadcasting) {
+                // For broadcasts, we can't update, so just show static content
+                return;
+            } else {
+                user.sendTo(room, `|uhtmlchange|${htmlId}|<div class="pad">` +
+                    `<h2>PSGO Cards Database</h2>` +
+                    `<p><strong>Filters:</strong> ${filtersText} | <strong>Total Results:</strong> ${filteredCards.length} | <strong>Page:</strong> ${page}/${totalPages}</p>` +
+                    (totalPages > 1 ? `<div style="margin: 10px 0; text-align: center;">` +
+                        (page > 1 ? `<button class="button" name="send" value="/psgo cards ${filters.length ? filters.join(', ') + ', ' : ''}page:${page - 1}">← Previous</button> ` : '') +
+                        `Page ${page} of ${totalPages}` +
+                        (page < totalPages ? ` <button class="button" name="send" value="/psgo cards ${filters.length ? filters.join(', ') + ', ' : ''}page:${page + 1}">Next →</button>` : '') +
+                        `</div>` : '') +
+                    `<div style="max-height: 400px; overflow-y: auto;">${tableHTML}</div>` +
+                    `<div style="margin-top: 10px; font-size: 0.9em;">` +
+                    `<strong>Filters:</strong> set:base1, rarity:mythic, type:fire, or search by name<br>` +
+                    `<strong>Example:</strong> /psgo cards set:base1, rarity:rare, page:2` +
+                    `</div></div>`);
+            }
+        } catch (error) {
+            if (user.connected && !this.broadcasting) {
+                user.sendTo(room, `|uhtmlchange|${htmlId}|<div class="pad"><p>Error loading cards. Please try again.</p></div>`);
+            }
+        }
+    });
+},	 
         
-        cardshelp: ['/psgo cards [filters] - List all cards in database. Filters: set:id, rarity:name, type:fire, or card name'],
+        cardshelp: ['/psgo cards [filters], [page:number] - List cards with pagination. Filters: set:id, rarity:name, type:fire, or card name. Example: /psgo cards set:base1, page:2'],
 
         async rarities(target, room, user) {
             if (!this.runBroadcast()) return;
