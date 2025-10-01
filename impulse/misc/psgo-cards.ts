@@ -569,7 +569,7 @@ async function takePackCredits(userid: string, amount: number): Promise<boolean>
 /*
 * For Tournament To Give Card
 */
-function randomGiveCardWeighted(userid: string, isWinner: boolean = false): { success: boolean; packName?: string; cardName?: string } {
+function randomGiveCardWeightedSync(userid: string, isWinner: boolean = false): { success: boolean; packName?: string; cardName?: string } {
     const allCards = getAllCardsSync();
     const allPacks = getAllPacksSync();
     const availableCards = Object.values(allCards);
