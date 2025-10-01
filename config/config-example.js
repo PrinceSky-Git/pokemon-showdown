@@ -35,6 +35,31 @@ exports.tournamentRewards = {
 exports.youtubeKey = '';
 
 /**
+ * mongodb - MongoDB connection settings
+ *   Set to null to disable MongoDB functionality
+ * @type {{uri: string, database: string, nodbwriting?: boolean} | null}
+ */
+exports.mongodb = {
+	/**
+	 * uri - MongoDB connection string
+	 * Format: mongodb://username:password@host:port
+	 * Or for MongoDB Atlas: mongodb+srv://username:password@cluster.mongodb.net
+	 */
+	uri: 'mongodb://localhost:27017',
+	
+	/**
+	 * database - The database name to use
+	 */
+	database: 'impulse',
+	
+	/**
+	 * nodbwriting - Disable all write operations (useful for testing/readonly replicas)
+	 * When true, all write operations return immediately without executing
+	 */
+	nodbwriting: false,
+};
+
+/**
  * wsdeflate - compresses WebSocket messages
  *  Toggles use of the Sec-WebSocket-Extension permessage-deflate extension.
  *  This compresses messages sent and received over a WebSocket connection
