@@ -540,6 +540,13 @@ async function addUserPack(userid: string, pack: string): Promise<void> {
     await userPacks.pushIn(userid, pack);
 }
 
+// For Tournaments
+function addUserPackSync(userid: string, pack: string): Promise<void> {
+    await userPacks.pushInSync(userid, pack);
+}
+
+Impulse.addUserPackSync = addUserPackSync;
+
 async function removeUserPack(userid: string, pack: string): Promise<boolean> {
     const packs = await getUserPacks(userid);
     const idx = packs.indexOf(pack);
