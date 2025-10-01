@@ -921,7 +921,7 @@ export const commands: Chat.Commands = {
         },
         ladderhelp: ['/psgo ladder - View points leaderboard'],
 
-       async cards(target, room, user) {
+       /*async cards(target, room, user) {
             if (!this.runBroadcast()) return;
     
             const allCards = await getAllCards();
@@ -994,6 +994,7 @@ export const commands: Chat.Commands = {
         },
         
         cardshelp: ['/psgo cards [filters] - List all cards in database. Filters: set:id, rarity:name, type:fire, or card name'],
+		  */
 		  
 
         async rarities(target, room, user) {
