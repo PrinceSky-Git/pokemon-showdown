@@ -1,6 +1,6 @@
 /*
 * Pokemon Showdown
-* Experience
+* Experience System - Refactored with Atomic Operations
 * Instructions:
 * Add this code in server/chat.ts
 * In parse function//Output the message
@@ -72,16 +72,14 @@ export class ExpSystem {
 
   private static async saveExpConfig(): Promise<void> {
     try {
-      const config = {
-        doubleExp: DOUBLE_EXP,
-        doubleExpEndTime: DOUBLE_EXP_END_TIME,
-        lastUpdated: new Date(),
-      };
-      
-      // Use upsert to create or update
+      // Use atomic upsert
       await ExpConfigDB.upsert(
         { _id: 'config' },
-        config
+        {
+          doubleExp: DOUBLE_EXP,
+          doubleExpEndTime: DOUBLE_EXP_END_TIME,
+          lastUpdated: new Date(),
+        }
       );
     } catch (error) {
       console.error(`Error saving EXP config: ${error}`);
@@ -97,6 +95,7 @@ export class ExpSystem {
     const id = toID(userid);
     const level = this.getLevel(amount);
     
+    // Use atomic upsert instead of manual insert/update logic
     await ExpDB.upsert(
       { _id: id },
       {
@@ -114,14 +113,17 @@ export class ExpSystem {
   }
 
   static async hasExp(userid: string, amount: number): Promise<boolean> {
-    const exp = await this.readExp(userid);
-    return exp >= amount;
+    const id = toID(userid);
+    // More efficient: query directly instead of fetching full document
+    const doc = await ExpDB.findOne({ _id: id, exp: { $gte: amount } });
+    return doc !== null;
   }
 
   static async hasLevel(userid: string, level: number): Promise<boolean> {
-    const exp = await this.readExp(userid);
-    const currentLevel = this.getLevel(exp);
-    return currentLevel >= level;
+    const id = toID(userid);
+    // More efficient: query directly instead of fetching and calculating
+    const doc = await ExpDB.findOne({ _id: id, level: { $gte: level } });
+    return doc !== null;
   }
   
   static async addExp(userid: string, amount: number, reason?: string, by?: string): Promise<number> {
@@ -131,34 +133,26 @@ export class ExpSystem {
       return await this.readExp(id);
     }
 
-    const currentExp = await this.readExp(id);
+    // Get current exp and level for level-up detection
+    const currentDoc = await ExpDB.findById(id);
+    const currentExp = currentDoc ? currentDoc.exp : DEFAULT_EXP;
     const currentLevel = this.getLevel(currentExp);
     
     const gainedAmount = DOUBLE_EXP ? amount * 2 : amount;
     const newExp = currentExp + gainedAmount;
     const newLevel = this.getLevel(newExp);
     
-    // Use updateOne with $inc for atomic increment, or upsert if document doesn't exist
-    const exists = await ExpDB.exists({ _id: id });
-    
-    if (exists) {
-      // Use $inc for atomic increment
-      await ExpDB.updateOne(
-        { _id: id },
-        { 
-          $inc: { exp: gainedAmount },
-          $set: { level: newLevel, lastUpdated: new Date() }
-        }
-      );
-    } else {
-      // Create new document
-      await ExpDB.insertOne({
-        _id: id,
-        exp: newExp,
-        level: newLevel,
-        lastUpdated: new Date(),
-      } as any);
-    }
+    // Use atomic findOneAndUpdate with upsert for race-condition safety
+    // This ensures the operation is atomic even with concurrent requests
+    await ExpDB.findOneAndUpdate(
+      { _id: id },
+      { 
+        $inc: { exp: gainedAmount },
+        $set: { level: newLevel, lastUpdated: new Date() },
+        $setOnInsert: { _id: id }
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
     
     if (!by) {
       this.cooldowns[id] = Date.now();
@@ -175,14 +169,25 @@ export class ExpSystem {
   static async addExpRewards(userid: string, amount: number, reason?: string, by?: string): Promise<number> {
     const id = toID(userid);
     
-    const currentExp = await this.readExp(id);
+    // Get current exp and level for level-up detection
+    const currentDoc = await ExpDB.findById(id);
+    const currentExp = currentDoc ? currentDoc.exp : DEFAULT_EXP;
     const currentLevel = this.getLevel(currentExp);
     
     const gainedAmount = DOUBLE_EXP ? amount * 2 : amount;
     const newExp = currentExp + gainedAmount;
     const newLevel = this.getLevel(newExp);
     
-    await this.writeExp(id, newExp);
+    // Use atomic operation
+    await ExpDB.findOneAndUpdate(
+      { _id: id },
+      { 
+        $inc: { exp: gainedAmount },
+        $set: { level: newLevel, lastUpdated: new Date() },
+        $setOnInsert: { _id: id }
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
     
     // Check if user leveled up
     if (newLevel > currentLevel) {
@@ -286,22 +291,41 @@ export class ExpSystem {
 
   static async takeExp(userid: string, amount: number, reason?: string, by?: string): Promise<number> {
     const id = toID(userid);
-    const currentExp = await this.readExp(id);
-    if (currentExp >= amount) {
-      const newExp = currentExp - amount;
-      await this.writeExp(id, newExp);
-      return newExp;
+    
+    // Use atomic $inc with negative value for safe decrement
+    const result = await ExpDB.findOneAndUpdate(
+      { _id: id, exp: { $gte: amount } }, // Only decrement if user has enough exp
+      { 
+        $inc: { exp: -amount },
+        $set: { lastUpdated: new Date() }
+      },
+      { returnDocument: 'after' }
+    );
+    
+    if (result) {
+      // Update level after exp change
+      const newLevel = this.getLevel(result.exp);
+      if (result.level !== newLevel) {
+        await ExpDB.updateOne(
+          { _id: id },
+          { $set: { level: newLevel } }
+        );
+      }
+      return result.exp;
     }
-    return currentExp;
+    
+    // User doesn't have enough exp or doesn't exist
+    const doc = await ExpDB.findById(id);
+    return doc ? doc.exp : DEFAULT_EXP;
   }
 
   static async resetAllExp(): Promise<void> {
-    // Use deleteMany to clear all exp data
+    // Efficient bulk delete operation
     await ExpDB.deleteMany({});
   }
 
   static async getRichestUsers(limit: number = 100): Promise<[string, number][]> {
-    // Use findSorted with limit for efficient sorting
+    // Use optimized findSorted from mongodb_module
     const docs = await ExpDB.findSorted({}, { exp: -1 }, limit);
     return docs.map(doc => [doc._id, doc.exp]);
   }
