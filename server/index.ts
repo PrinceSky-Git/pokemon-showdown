@@ -71,6 +71,7 @@ try {
 
 import { FS, Repl } from '../lib';
 import { JsonDB } from '../impulse/db';
+import { MongoDB } from '../impulse/mongodb_module';
 
 /*********************************************************
  * Set up most of our globals
@@ -156,6 +157,37 @@ function setupGlobals() {
 }
 setupGlobals();
 
+/****
+* Impulse MongoDB
+*/
+async function initializeMongoDB() {
+	if (!Config.mongodb) {
+		Monitor.notice('MongoDB not configured - skipping initialization');
+		return;
+	}
+
+	try {
+		Monitor.notice('Connecting to MongoDB...');
+		await MongoDB.connect(Config.mongodb);
+		Monitor.notice(`MongoDB connected successfully to database: ${Config.mongodb.database}`);
+		
+		// Optional: Create indexes for better performance
+		try {
+			const IconsDB = MongoDB<any>('usericons');
+			await IconsDB.createIndex({ createdAt: -1 });
+			Monitor.debug('MongoDB indexes created');
+		} catch (indexError) {
+			Monitor.warn('Error creating MongoDB indexes: ' + indexError);
+		}
+	} catch (error) {
+		Monitor.error('Failed to connect to MongoDB: ' + error);
+		Monitor.warn('Server will continue without MongoDB support');
+	}
+}
+
+// Initialize MongoDB immediately
+void initializeMongoDB();
+
 if (Config.crashguard) {
 	// graceful crash - allow current battles to finish before restarting
 	process.on('uncaughtException', (err: Error) => {
@@ -166,6 +198,27 @@ if (Config.crashguard) {
 		Monitor.crashlog(err as any, 'A main process Promise');
 	});
 }
+
+async function gracefulShutdown(signal: string) {
+	Monitor.notice(`Received ${signal}, shutting down gracefully...`);
+	
+	// Close MongoDB connection
+	try {
+		if (MongoDB.isConnected()) {
+			Monitor.notice('Closing MongoDB connection...');
+			await MongoDB.disconnect();
+			Monitor.notice('MongoDB connection closed');
+		}
+	} catch (error) {
+		Monitor.error('Error closing MongoDB connection: ' + error);
+	}
+	
+	process.exit(0);
+}
+
+process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
+
 
 /*********************************************************
  * Start networking processes to be connected to
