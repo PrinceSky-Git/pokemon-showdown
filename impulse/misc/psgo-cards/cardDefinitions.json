@@ -1,0 +1,36 @@
+{
+  "base1-1": {
+    "id": "base1-1",
+    "name": "Alakazam",
+    "nameId": "base1-alakazam",
+    "image": "https://images.pokemontcg.io/base1/1_hires.png",
+    "rarity": "Rare",
+    "set": "Base Set",
+    "setId": "base1",
+    "cardNumber": "1",
+    "types": "Psychic"
+  },
+  "base1-2": {
+    "id": "base1-2",
+    "name": "Blastoise",
+    "nameId": "base1-blastoise",
+    "image": "https://images.pokemontcg.io/base1/2_hires.png",
+    "rarity": "Rare",
+    "set": "Base Set",
+    "setId": "base1",
+    "cardNumber": "2",
+    "types": "Water"
+  },
+  "base1-3": {
+    "id": "base1-3",
+    "name": "Chansey",
+    "nameId": "base1-chansey",
+    "image": "https://images.pokemontcg.io/base1/3_hires.png",
+    "rarity": "Rare",
+    "set": "Base Set",
+    "setId": "base1",
+    "cardNumber": "3",
+    "types": "Colorless"
+  }
+  // ... include all other cards in the same pattern ...
+}
