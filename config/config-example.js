@@ -51,6 +51,15 @@ exports.mongodb = {
 	 * database - The database name to use
 	 */
 	database: 'impulse',
+
+	/**
+	* More Options
+	*/
+	maxPoolSize: 90,
+	minPoolSize: 8,
+	maxIdleTimeMS: 30000,
+	waitQueueTimeoutMS: 10000,
+	serverSelectionTimeoutMS: 10000,
 	
 	/**
 	 * nodbwriting - Disable all write operations (useful for testing/readonly replicas)
