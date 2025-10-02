@@ -4,8 +4,8 @@
 * @license MIT
 */
 
-import { FS } from '../../lib';
-import { MongoDB } from '../../impulse/mongodb_module';
+import { FS } from '../lib';
+import { MongoDB } from '../impulse/mongodb_module';
 
 const AVATAR_PATH = 'config/avatars/';
 const STAFF_ROOM_ID = 'staff';
