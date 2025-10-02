@@ -525,10 +525,10 @@ export const MongoDB = Object.assign(getMongoDB, {
 			
 			// Optimized connection options for free tier
 			const clientOptions: MongoClientOptions = {
-				maxPoolSize: config.maxPoolSize || 20, // Reduced from default 100
-				minPoolSize: config.minPoolSize || 2,  // Keep minimum connections ready
-				maxIdleTimeMS: config.maxIdleTimeMS || 60000, // Close idle connections after 60s
-				waitQueueTimeoutMS: config.waitQueueTimeoutMS || 5000, // Timeout waiting for connection
+				maxPoolSize: config.maxPoolSize || 80, // Reduced from default 100
+				minPoolSize: config.minPoolSize || 5,  // Keep minimum connections ready
+				maxIdleTimeMS: config.maxIdleTimeMS || 30000, // Close idle connections after 30s
+				waitQueueTimeoutMS: config.waitQueueTimeoutMS || 10000, // Timeout waiting for connection
 				serverSelectionTimeoutMS: config.serverSelectionTimeoutMS || 10000, // Timeout for server selection
 			};
 
