@@ -6,21 +6,28 @@
  *
  * Advantages:
  * - PS-style API: MongoDB("users").findOne({id: "user123"})
- * - Automatic connection management
+ * - Automatic connection management with timeouts
  * - Promise-based operations
  * - Consistent error handling
  * - Query builder pattern
+ * - Optimized connection pooling
  * - Does nothing in unit tests when disabled
  *
  * @license MIT
  */
 
-import { MongoClient, Db, Collection, Document, Filter, UpdateFilter, FindOptions, InsertOneOptions, UpdateOptions, DeleteOptions, BulkWriteOptions } from 'mongodb';
+import { MongoClient, Db, Collection, Document, Filter, UpdateFilter, FindOptions, InsertOneOptions, UpdateOptions, DeleteOptions, BulkWriteOptions, MongoClientOptions } from 'mongodb';
 
 interface MongoConfig {
 	uri: string;
 	database: string;
 	nodbwriting?: boolean;
+	// Connection pool options
+	maxPoolSize?: number;
+	minPoolSize?: number;
+	maxIdleTimeMS?: number;
+	waitQueueTimeoutMS?: number;
+	serverSelectionTimeoutMS?: number;
 }
 
 interface PendingOperation {
@@ -505,7 +512,7 @@ export const MongoDB = Object.assign(getMongoDB, {
 	MongoDBError,
 
 	/**
-	 * Connect to MongoDB. Must be called before any operations.
+	 * Connect to MongoDB with optimized connection pool settings.
 	 */
 	async connect(config: MongoConfig): Promise<void> {
 		if (__mongoState.isConnected) {
@@ -515,11 +522,23 @@ export const MongoDB = Object.assign(getMongoDB, {
 
 		try {
 			__mongoState.config = config;
-			__mongoState.client = new MongoClient(config.uri);
+			
+			// Optimized connection options for free tier
+			const clientOptions: MongoClientOptions = {
+				maxPoolSize: config.maxPoolSize || 20, // Reduced from default 100
+				minPoolSize: config.minPoolSize || 2,  // Keep minimum connections ready
+				maxIdleTimeMS: config.maxIdleTimeMS || 60000, // Close idle connections after 60s
+				waitQueueTimeoutMS: config.waitQueueTimeoutMS || 5000, // Timeout waiting for connection
+				serverSelectionTimeoutMS: config.serverSelectionTimeoutMS || 10000, // Timeout for server selection
+			};
+
+			__mongoState.client = new MongoClient(config.uri, clientOptions);
 			await __mongoState.client.connect();
 			__mongoState.db = __mongoState.client.db(config.database);
 			__mongoState.isConnected = true;
+			
 			console.log(`Connected to MongoDB database: ${config.database}`);
+			console.log(`Connection pool: max=${clientOptions.maxPoolSize}, min=${clientOptions.minPoolSize}, maxIdleTime=${clientOptions.maxIdleTimeMS}ms`);
 		} catch (error) {
 			throw new MongoDBError(`Failed to connect to MongoDB: ${error}`);
 		}
@@ -570,6 +589,31 @@ export const MongoDB = Object.assign(getMongoDB, {
 			throw new MongoDBError('MongoDB not connected');
 		}
 		return __mongoState.client;
+	},
+
+	/**
+	 * Get connection pool statistics.
+	 */
+	async getConnectionStats(): Promise<any> {
+		if (!__mongoState.client) {
+			throw new MongoDBError('MongoDB not connected');
+		}
+		
+		try {
+			const adminDb = __mongoState.client.db('admin');
+			const serverStatus = await adminDb.command({ serverStatus: 1 });
+			
+			return {
+				currentConnections: serverStatus.connections?.current || 0,
+				availableConnections: serverStatus.connections?.available || 0,
+				totalCreated: serverStatus.connections?.totalCreated || 0,
+				poolSize: __mongoState.config?.maxPoolSize || 20,
+				minPoolSize: __mongoState.config?.minPoolSize || 2,
+			};
+		} catch (error) {
+			console.error('Error getting connection stats:', error);
+			return null;
+		}
 	},
 
 	/**
