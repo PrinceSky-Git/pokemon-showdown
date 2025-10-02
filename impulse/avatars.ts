@@ -46,7 +46,7 @@ function getExtension(filename: string): string {
   return ext || '';
 }
 
-async function syncAvatarsFromDisk(): Promise<void> {
+/*async function syncAvatarsFromDisk(): Promise<void> {
   try {
     const files = await FS(AVATAR_PATH).readdir();
     if (!files) return;
@@ -79,7 +79,7 @@ async function syncAvatarsFromDisk(): Promise<void> {
 }
 
 // Initialize on startup - sync any avatars in the directory
-syncAvatarsFromDisk();
+syncAvatarsFromDisk();*/
 
 export const commands: Chat.ChatCommands = {
   customavatar: {
