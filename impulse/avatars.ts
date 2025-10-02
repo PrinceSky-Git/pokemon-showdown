@@ -81,7 +81,7 @@ async function syncAvatarsFromDisk(): Promise<void> {
 // Initialize on startup - sync any avatars in the directory
 syncAvatarsFromDisk();
 
-export const commands: Chat.Commands = {
+export const commands: Chat.ChatCommands = {
   customavatar: {
     async set(target, room, user) {
       this.checkCan('bypassall');
