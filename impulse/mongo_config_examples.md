@@ -5,18 +5,18 @@
 // Automatically starts MongoDB when server starts
 // ============================================================
 exports.mongodb = {
-	database: 'showdown_dev',
-	maxPoolSize: 20,
-	minPoolSize: 2,
-	maxIdleTimeMS: 30000,
-	subprocess: {
-		enabled: true,
-		mongodPath: 'mongod', // Use 'mongod' if in PATH, or '/usr/local/bin/mongod' for full path
-		dbPath: './.mongodb-data', // Where MongoDB stores data
-		port: 27017,
-		logPath: './logs/mongodb.log',
-		wiredTigerCacheSizeGB: 0.5, // Limit MongoDB memory to 512MB (good for development)
-	},
+  database: 'showdown_dev',
+  maxPoolSize: 20,
+  minPoolSize: 2,
+  maxIdleTimeMS: 30000,
+  subprocess: {
+    enabled: true,
+    mongodPath: 'mongod',             // Use 'mongod' if in PATH, or full path like '/usr/local/bin/mongod'
+    dbPath: './.mongodb-data',        // Where MongoDB stores data
+    port: 27017,
+    logPath: './logs/mongodb.log',
+    wiredTigerCacheSizeGB: 0.5,       // Limit MongoDB memory to 512MB (good for development)
+  },
 };
 
 // ============================================================
@@ -24,52 +24,52 @@ exports.mongodb = {
 // You manually start MongoDB in a separate terminal
 // ============================================================
 exports.mongodb = {
-	uri: 'mongodb://localhost:27017',
-	database: 'showdown_dev',
-	maxPoolSize: 20,
-	minPoolSize: 2,
-	maxIdleTimeMS: 30000,
-	waitQueueTimeoutMS: 10000,
-	serverSelectionTimeoutMS: 10000,
+  uri: 'mongodb://localhost:27017',
+  database: 'showdown_dev',
+  maxPoolSize: 20,
+  minPoolSize: 2,
+  maxIdleTimeMS: 30000,
+  waitQueueTimeoutMS: 10000,
+  serverSelectionTimeoutMS: 10000,
 };
 
 // ============================================================
 // OPTION 3: PRODUCTION - MongoDB Atlas (Cloud)
 // ============================================================
 exports.mongodb = {
-	uri: 'mongodb+srv://username:password@cluster0.abc123.mongodb.net/?retryWrites=true&w=majority',
-	database: 'showdown_prod',
-	maxPoolSize: 80, // Higher for production
-	minPoolSize: 5,
-	maxIdleTimeMS: 30000,
-	waitQueueTimeoutMS: 10000,
-	serverSelectionTimeoutMS: 10000,
+  uri: 'mongodb+srv://username:password@cluster0.abc123.mongodb.net/?retryWrites=true&w=majority',
+  database: 'showdown_prod',
+  maxPoolSize: 80,                  // Higher for production
+  minPoolSize: 5,
+  maxIdleTimeMS: 30000,
+  waitQueueTimeoutMS: 10000,
+  serverSelectionTimeoutMS: 10000,
 };
 
 // ============================================================
 // OPTION 4: PRODUCTION - Self-hosted MongoDB with Authentication
 // ============================================================
 exports.mongodb = {
-	uri: 'mongodb://admin:SecurePassword123@your-server.com:27017/showdown_prod?authSource=admin',
-	database: 'showdown_prod',
-	maxPoolSize: 80,
-	minPoolSize: 5,
-	maxIdleTimeMS: 60000,
-	waitQueueTimeoutMS: 15000,
-	serverSelectionTimeoutMS: 15000,
+  uri: 'mongodb://admin:SecurePassword123@your-server.com:27017/showdown_prod?authSource=admin',
+  database: 'showdown_prod',
+  maxPoolSize: 80,
+  minPoolSize: 5,
+  maxIdleTimeMS: 60000,
+  waitQueueTimeoutMS: 15000,
+  serverSelectionTimeoutMS: 15000,
 };
 
 // ============================================================
 // OPTION 5: REPLICA SET (Production High Availability)
 // ============================================================
 exports.mongodb = {
-	uri: 'mongodb://host1:27017,host2:27017,host3:27017/?replicaSet=rs0&retryWrites=true&w=majority',
-	database: 'showdown_prod',
-	maxPoolSize: 100,
-	minPoolSize: 10,
-	maxIdleTimeMS: 60000,
-	waitQueueTimeoutMS: 15000,
-	serverSelectionTimeoutMS: 15000,
+  uri: 'mongodb://host1:27017,host2:27017,host3:27017/?replicaSet=rs0&retryWrites=true&w=majority',
+  database: 'showdown_prod',
+  maxPoolSize: 100,
+  minPoolSize: 10,
+  maxIdleTimeMS: 60000,
+  waitQueueTimeoutMS: 15000,
+  serverSelectionTimeoutMS: 15000,
 };
 
 // ============================================================
@@ -77,17 +77,17 @@ exports.mongodb = {
 // Useful when you already have MongoDB running on 27017
 // ============================================================
 exports.mongodb = {
-	database: 'showdown_test',
-	maxPoolSize: 10,
-	minPoolSize: 1,
-	subprocess: {
-		enabled: true,
-		mongodPath: 'mongod',
-		dbPath: './.mongodb-test-data',
-		port: 27018, // Different port to avoid conflicts
-		logPath: './logs/mongodb-test.log',
-		wiredTigerCacheSizeGB: 0.25, // Even less memory for testing
-	},
+  database: 'showdown_test',
+  maxPoolSize: 10,
+  minPoolSize: 1,
+  subprocess: {
+    enabled: true,
+    mongodPath: 'mongod',
+    dbPath: './.mongodb-test-data',
+    port: 27018,                    // Different port to avoid conflicts
+    logPath: './logs/mongodb-test.log',
+    wiredTigerCacheSizeGB: 0.25,    // Even less memory for testing
+  },
 };
 
 // ============================================================
@@ -101,11 +101,11 @@ exports.mongodb = null;
 // Connects but prevents any writes
 // ============================================================
 exports.mongodb = {
-	uri: 'mongodb://localhost:27017',
-	database: 'showdown_readonly',
-	nodbwriting: true, // Disable all write operations
-	maxPoolSize: 20,
-	minPoolSize: 2,
+  uri: 'mongodb://localhost:27017',
+  database: 'showdown_readonly',
+  nodbwriting: true,               // Disable all write operations
+  maxPoolSize: 20,
+  minPoolSize: 2,
 };
 
 // ============================================================
@@ -142,21 +142,21 @@ WHEN TO USE WHAT:
 
 // Development (easiest):
 exports.mongodb = {
-	database: 'showdown_dev',
-	subprocess: { enabled: true, wiredTigerCacheSizeGB: 0.5 },
+  database: 'showdown_dev',
+  subprocess: { enabled: true, wiredTigerCacheSizeGB: 0.5 },
 };
 
 // Staging:
 exports.mongodb = {
-	uri: 'mongodb://staging-server:27017',
-	database: 'showdown_staging',
-	maxPoolSize: 40,
+  uri: 'mongodb://staging-server:27017',
+  database: 'showdown_staging',
+  maxPoolSize: 40,
 };
 
 // Production:
 exports.mongodb = {
-	uri: 'mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority',
-	database: 'showdown_prod',
-	maxPoolSize: 80,
-	minPoolSize: 10,
+  uri: 'mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority',
+  database: 'showdown_prod',
+  maxPoolSize: 80,
+  minPoolSize: 10,
 };
