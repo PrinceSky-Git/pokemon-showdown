@@ -1189,6 +1189,480 @@ width: 324px;
 .rightmenu .menugroup .button {
 width: 200px;
 }
+
+/* DARK MODE - Purple/Violet Haunted Theme */
+
+/* HEADER BACKGROUND */
+.dark div[id="header"] {
+background: linear-gradient(135deg, #2d1b3d 0%, #1a0f2e 50%, #0f0520 100%);
+box-shadow: 0 2px 8px rgba(138, 43, 226, 0.3);
+}
+
+/* HEADER BAR BACKGROUND */
+.dark div[class="maintabbarbottom"] {
+border: 2px solid #6a3f9e;
+background: linear-gradient(to bottom, #1a0f2e, #2d1b3d);
+box-shadow: inset 0 1px 0 rgba(138, 43, 226, 0.2);
+}
+
+/* HEADER BUTTONS */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button,
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button.cur,
+.dark div[class="userbar"] > button {
+border: 2px solid #6a3f9e;
+color: #e0d0f0;
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* HEADER BUTTONS HOVER */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button:hover,
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button.cur:hover,
+.dark div[class="userbar"] > button:hover {
+border-color: #8a2be2;
+color: #ffffff;
+background: linear-gradient(to bottom, #6a3f9e, #8a2be2);
+box-shadow: 0 4px 8px rgba(138, 43, 226, 0.4);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* REGULAR BUTTONS */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > button {
+color: #e0d0f0;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* REGULAR BUTTONS HOVER */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > button:hover {
+color: #ffffff;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* NOTIFICATION BUTTONS */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button.notifying {
+background: linear-gradient(to bottom, #8a2be2, #6a3f9e);
+border: 2px solid #9370db;
+color: #ffffff;
+box-shadow: 0 0 12px rgba(138, 43, 226, 0.7);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* NOTIFICATION BUTTONS HOVER */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button.notifying:hover {
+background: linear-gradient(to bottom, #9370db, #8a2be2);
+border-color: #8a2be2;
+color: #ffffff;
+box-shadow: 0 0 16px rgba(147, 112, 219, 0.9);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* FOCUS STATES */
+.dark div[class^="tabbar maintabbar"] > div > ul > li > a.button:focus,
+.dark div[class="userbar"] > button:focus {
+outline: 3px solid #6a3f9e;
+outline-offset: 2px;
+}
+
+/* MAIN MENU FOOTER */
+.dark .mainmenufooter {
+color: #e0d0f0;
+text-shadow: 0 0 8px rgba(138, 43, 226, 0.6), 0 0 4px rgba(138, 43, 226, 0.4);
+background: rgba(29, 15, 46, 0.85);
+border: 1px solid rgba(106, 63, 158, 0.5);
+}
+
+.dark .mainmenufooter a {
+color: #ba9bdd;
+}
+
+.dark .mainmenufooter a:hover {
+color: #9370db;
+}
+
+/* PM BOXES */
+.dark .pm-window h3 {
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+color: #e0d0f0;
+border: 2px solid #6a3f9e;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.dark .pm-window h3:hover {
+color: #ffffff;
+background: linear-gradient(to bottom, #6a3f9e, #8a2be2);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.dark .pm-window h3.pm-notifying {
+border-color: #8a2be2;
+background: linear-gradient(to bottom, #8a2be2, #6a3f9e);
+color: #ffffff;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.dark .pm-window h3.pm-notifying:hover {
+border-color: #9370db;
+background: linear-gradient(to bottom, #9370db, #8a2be2);
+}
+
+.dark .pm-window h3 small {
+color: #ba9bdd;
+}
+
+.dark .pm-log {
+background: rgba(26, 15, 46, 0.95);
+color: #e0d0f0;
+border: 2px solid #6a3f9e;
+}
+
+.dark .pm-log-add {
+color: #e0d0f0;
+border: 2px solid #6a3f9e;
+background: rgba(26, 15, 46, 0.9);
+}
+
+.dark .pm-window.focused h3,
+.dark .pm-window.focused .pm-log,
+.dark .pm-window.focused .pm-log-add {
+border-color: #8a2be2;
+}
+
+.dark .pm-window.focused h3,
+.dark .pm-window.focused h3:hover {
+background: linear-gradient(to bottom, #6a3f9e, #8a2be2);
+color: #ffffff;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* CHALLENGES */
+.dark .challenge {
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+border: 2px solid #6a3f9e;
+color: #e0d0f0;
+}
+
+/* NEWS ENTRIES */
+.dark .newsentry {
+border-bottom: 2px solid #6a3f9e;
+color: #e0d0f0;
+}
+
+.dark .unread {
+background: rgba(106, 63, 158, 0.4);
+}
+
+/* MAIN MESSAGES */
+.dark .mainmessage {
+background: rgba(26, 15, 46, 0.9);
+color: #e0d0f0;
+border: 2px solid #6a3f9e;
+box-shadow: 0 4px 16px rgba(138, 43, 226, 0.3);
+}
+
+/* MENU GROUPS */
+.dark .menugroup {
+background: linear-gradient(135deg, rgba(45, 27, 61, 0.95), rgba(58, 31, 94, 0.95));
+color: white;
+text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+border: 2px solid #6a3f9e;
+box-shadow: 0 8px 24px rgba(106, 63, 158, 0.3);
+}
+
+/* MENU GROUP BUTTONS */
+.dark .menugroup .button {
+color: #ffffff;
+border: 2px solid #6a3f9e;
+background: linear-gradient(to bottom, #4a2f6e, #3a1f5e);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 1px rgba(106, 63, 158, 0.2);
+}
+
+.dark .menugroup .button:hover {
+background: linear-gradient(to bottom, #6a3f9e, #5a2f8e);
+border-color: #8a2be2;
+box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+.dark .menugroup .button:active {
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 -1px 1px rgba(106, 63, 158, 0.2), inset 0 1px 1px rgba(0, 0, 0, 0.5);
+background: linear-gradient(to bottom, #5a2f8e, #6a3f9e);
+border-color: #8a2be2;
+}
+
+.dark .menugroup .button.disabled,
+.dark .menugroup .button.disabled:hover,
+.dark .menugroup .button.disabled:active {
+background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
+border-color: #4a4a4a;
+color: #888888;
+text-shadow: none;
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* COLORED MENU BUTTONS */
+.dark .button.mainmenu1 {
+background: linear-gradient(to bottom, #4a2f6e, #3a1f5e);
+border-color: #6a3f9e;
+}
+
+.dark .button.mainmenu1:hover {
+background: linear-gradient(to bottom, #6a3f9e, #5a2f8e);
+border-color: #8a2be2;
+}
+
+.dark .button.mainmenu1:active {
+background: linear-gradient(to bottom, #5a2f8e, #6a3f9e);
+border-color: #8a2be2;
+}
+
+.dark .button.mainmenu2 {
+background: linear-gradient(to bottom, #5a3f7e, #4a2f6e);
+border-color: #6a3f9e;
+}
+
+.dark .button.mainmenu2:hover {
+background: linear-gradient(to bottom, #6a3f9e, #5a3f7e);
+border-color: #8a2be2;
+}
+
+.dark .button.mainmenu2:active {
+background: linear-gradient(to bottom, #5a3f7e, #6a3f9e);
+border-color: #8a2be2;
+}
+
+.dark .button.mainmenu3 {
+background: linear-gradient(to bottom, #3a1f5e, #2a0f4e);
+border-color: #5a2f8e;
+color: #d0c0e0;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.dark .button.mainmenu3:hover {
+background: linear-gradient(to bottom, #5a2f8e, #4a1f6e);
+border-color: #6a3f9e;
+color: #ffffff;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.dark .button.mainmenu3:active {
+background: linear-gradient(to bottom, #4a1f6e, #5a2f8e);
+border-color: #6a3f9e;
+}
+
+.dark .button.mainmenu4 {
+background: linear-gradient(to bottom, #6a3f9e, #5a2f8e);
+border-color: #8a2be2;
+}
+
+.dark .button.mainmenu4:hover {
+background: linear-gradient(to bottom, #8a2be2, #6a3f9e);
+border-color: #9370db;
+}
+
+.dark .button.mainmenu4:active {
+background: linear-gradient(to bottom, #6a3f9e, #8a2be2);
+border-color: #9370db;
+}
+
+.dark .button.mainmenu5 {
+background: linear-gradient(to bottom, #3a1f5e, #2a0f4e);
+border-color: #5a2f8e;
+color: #c0b0d0;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.dark .button.mainmenu5:hover {
+background: linear-gradient(to bottom, #4a2f6e, #3a1f5e);
+border-color: #6a3f9e;
+color: #ffffff;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.dark .button.mainmenu5:active {
+background: linear-gradient(to bottom, #3a1f5e, #4a2f6e);
+border-color: #6a3f9e;
+}
+
+.dark .button.mainmenu6 {
+background: linear-gradient(to bottom, #7a4fae, #5a2f8e);
+border-color: #9370db;
+}
+
+.dark .button.mainmenu6:hover {
+background: linear-gradient(to bottom, #9370db, #7a4fae);
+border-color: #ba9bdd;
+}
+
+.dark .button.mainmenu6:active {
+background: linear-gradient(to bottom, #7a4fae, #9370db);
+border-color: #ba9bdd;
+}
+
+/* LADDER */
+.dark .ladder table, .dark .ladder td, .dark .ladder th {
+border: 1px solid #6a3f9e;
+}
+
+.dark .ladder th {
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+color: #e0d0f0;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.dark .ladder span {
+color: #ba9bdd;
+}
+
+/* ROOM LIST */
+.dark .roomcounters button {
+border: 2px solid #6a3f9e;
+color: #e0d0f0;
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.dark .roomcounters button:hover {
+border-color: #8a2be2;
+color: #ffffff;
+background: linear-gradient(to bottom, #6a3f9e, #8a2be2);
+box-shadow: 0 4px 8px rgba(138, 43, 226, 0.4);
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.dark .roomlist .subrooms {
+color: #ba9bdd;
+}
+
+.dark .roomlist .subrooms a.blocklink {
+color: #ba9bdd;
+}
+
+.dark .roomlist .subrooms a.blocklink:hover {
+color: #9370db;
+}
+
+/* CHAT LOG */
+.dark .chat-log {
+background: rgba(26, 15, 46, 0.6);
+color: #e0d0f0;
+}
+
+.dark .chat-log-add {
+border-top: 1px solid #6a3f9e;
+background: rgba(26, 15, 46, 0.9);
+}
+
+.dark .chat-log .chat.mine,
+.dark .pm-log .chat.mine {
+background: rgba(106, 63, 158, 0.3);
+}
+
+.dark .chat small {
+color: #ba9bdd;
+}
+
+.dark .chat .message-announce small {
+color: #9370db;
+}
+
+.dark .chat.timer {
+color: #8a2be2;
+}
+
+.dark .highlighted {
+background: rgba(106, 63, 158, 0.4);
+}
+
+.dark .revealed {
+background-color: rgba(45, 27, 61, 0.8);
+}
+
+.dark .message-pm {
+color: #ba9bdd;
+}
+
+/* CHATBOX */
+.dark .chatbox label {
+color: #e0d0f0;
+}
+
+.dark .chatbox textarea {
+border: 1px solid #6a3f9e;
+background: rgba(26, 15, 46, 0.9);
+color: #e0d0f0;
+}
+
+.dark .chatbox textarea:focus {
+border-color: #8a2be2;
+box-shadow: 0 0 4px rgba(138, 43, 226, 0.5);
+}
+
+/* USERLIST */
+.dark .userlist {
+border-right: 1px solid #6a3f9e;
+background: rgba(26, 15, 46, 0.95);
+}
+
+.dark .pm-buttonbar button {
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+color: #e0d0f0;
+border-right: 1px solid #6a3f9e;
+border-bottom: 1px solid #6a3f9e;
+}
+
+.dark .userlist-minimized {
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+border-bottom: 1px solid #6a3f9e;
+}
+
+.dark .userlist-maximized {
+background: linear-gradient(to bottom, #2d1b3d, #1a0f2e);
+}
+
+.dark .userlist-minimized .userlist-count,
+.dark .userlist-maximized .userlist-count {
+color: #e0d0f0;
+}
+
+.dark .userlist-minimized .userlist-count:hover,
+.dark .userlist-maximized .userlist-count:hover,
+.dark .pm-buttonbar button:hover {
+background: linear-gradient(to bottom, #6a3f9e, #8a2be2);
+color: #ffffff;
+text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.dark .userlist li em.group {
+color: #ba9bdd;
+}
+
+.dark .userlist li button {
+color: #e0d0f0;
+}
+
+.dark .userlist li button:hover {
+background: rgba(106, 63, 158, 0.4);
+color: #ffffff;
+}
+
+.dark .userlist li button:active {
+background: rgba(138, 43, 226, 0.3);
+}
+
+.dark .userlist li.cur {
+background: rgba(26, 15, 46, 0.9);
+border-left: 3px solid #8a2be2;
+}
+
+.dark .userlist li.cur button,
+.dark .userlist li.cur button:hover {
+background: rgba(26, 15, 46, 0.9);
+color: #ffffff;
+}
+
+
 /* SYMBOLCOLORS START */
 [id$="-userlist-user-princesky"] button > em.group {
  color: #960019; 
