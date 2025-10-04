@@ -1192,6 +1192,16 @@ width: 200px;
 
 /* DARK MODE - Purple/Violet Haunted Theme */
 
+.dark body {
+background: url("https://i.ibb.co/fzkXfT7t/1759555713126-qkji39-2-1.jpg") no-repeat left fixed;
+background-size: cover;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+	
+.dark img[class="logo"] {
+	content: url("https://i.ibb.co/DPwXBhjb/cooltext492742310300438.png");
+}
+
 /* HEADER BACKGROUND */
 .dark div[id="header"] {
 background: linear-gradient(135deg, #2d1b3d 0%, #1a0f2e 50%, #0f0520 100%);
